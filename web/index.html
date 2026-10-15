@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="session-token" content="__SESSION_TOKEN__">
+  <title>Decision Lab · Live Game</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="masthead">
+      <div class="brand"><span class="brand-mark">◆</span><div><div class="eyebrow">LOCAL GAME TEST</div><h1>Decision Lab</h1></div></div>
+      <div class="connection"><span class="pulse"></span><span id="connection-text">게임 연결 중</span></div>
+    </header>
+
+    <main>
+      <section class="game-section">
+        <div class="section-heading"><div><span class="section-index">01 / LIVE GAME</span><h2>실시간 플레이</h2></div><span class="section-note">별도 게임 실행 파일과 동기화</span></div>
+        <div class="game-frame">
+          <div class="game-topline"><span>SECTOR 07 <span class="divider">/</span> TURRET TEST</span><span id="game-turn">TURN 01</span></div>
+          <canvas id="game-canvas" aria-label="게임 장면"></canvas>
+          <div class="game-hud"><div><small>PLAYER HP</small><strong id="hp-value">100 <em>/ 100</em></strong><div class="meter"><span id="hp-bar"></span></div></div><div><small>AMMO</small><strong id="ammo-value">3 <em>/ 3</em></strong><div class="meter blue"><span id="ammo-bar"></span></div></div><div><small>TURRET HP</small><strong id="enemy-value">60 <em>/ 60</em></strong><div class="meter orange"><span id="enemy-bar"></span></div></div><div class="game-outcome" id="game-outcome">포탑을 파괴하고 오른쪽 출구에 도착하세요</div></div>
+        </div>
+        <div class="manual-bar"><span class="manual-label">직접 조작</span><div id="manual-actions" class="manual-actions"></div><span class="manual-hint">게임 창에서도 조작할 수 있습니다</span></div>
+      </section>
+
+      <section class="control-section">
+        <div class="section-heading"><div><span class="section-index">02 / MODEL CONTROL</span><h2>모델 실행</h2></div><span class="section-note">선택한 모델의 행동만 게임에 적용</span></div>
+        <div class="control-panel">
+          <div class="provider-row"><div class="field-label">실행 모델</div><div class="segmented" id="provider-buttons"><button class="selected" data-provider="jev">Jev <span>API</span></button><button data-provider="laya">Laya <span>LOCAL</span></button><button data-provider="laya-mlx">Laya MLX <span>GPU</span></button></div><label class="compare-toggle"><input id="compare" type="checkbox"><span>MLX 함께 분석</span></label></div>
+          <div class="settings-row"><label class="key-field"><span>Jev API 키</span><input id="api-key" type="password" autocomplete="off" placeholder="이 창의 메모리에만 입력"><small id="key-status">키가 설정되지 않았습니다</small></label><label class="scenario-field"><span>시작 상황</span><select id="scenario"></select></label></div>
+          <div class="action-row"><button id="run" class="button-primary">▶ &nbsp; 모델 한 턴 실행</button><button id="auto" class="button-secondary">자동 플레이</button><button id="analyze" class="button-secondary">분석만 보기</button><button id="reset" class="button-ghost">↻ &nbsp; 새 게임</button><a id="export" class="export-link" href="#">기록 내려받기 ↗</a></div>
+          <div class="status-row"><span class="status-light"></span><span id="status-message">게임 실행 파일을 기다리는 중입니다.</span><span class="shortcut">ESC 자동 플레이 중지</span></div>
+        </div>
+      </section>
+
+      <section class="analytics-section">
+        <div class="section-heading"><div><span class="section-index">03 / DECISION TRACE</span><h2>판단 기록</h2></div><span class="section-note">최근 판단이 위에 표시됩니다</span></div>
+        <div class="stats-grid"><div class="stat"><small>GAME TURN</small><strong id="stat-turn">01</strong></div><div class="stat"><small>MODEL CALLS</small><strong id="stat-calls">0</strong></div><div class="stat"><small>LAST ACTION</small><strong id="stat-action">—</strong></div><div class="stat"><small>LAST LATENCY</small><strong id="stat-latency">—</strong></div></div>
+        <div class="analysis-grid"><div class="decision-column"><div class="column-title">DECISIONS <span id="decision-count">0</span></div><div id="decisions" class="decision-list"><div class="empty">모델을 실행하면 선택지별 판단이 이곳에 쌓입니다.</div></div></div><aside class="side-column"><div class="column-title">GAME STATE</div><div id="state-text" class="state-box">게임 상태를 읽는 중입니다.</div><div class="column-title event-title">EVENTS</div><div id="events" class="events"></div></aside></div>
+      </section>
+    </main>
+    <footer>Decision Lab <span>·</span> 게임은 독립 프로세스로 실행됩니다. WebView에는 키가 저장되지 않습니다.</footer>
+  </div>
+</body>
+</html>

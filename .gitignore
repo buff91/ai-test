@@ -1,0 +1,9 @@
+.venv/
+.uv-cache/
+.hf-cache/
+__pycache__/
+results/
+.env
+build/
+dist/
+*.spec
