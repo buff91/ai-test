@@ -90,6 +90,34 @@ uv run python compare.py --provider local --output results/local-typed-decisions
 uv run python compare.py --provider jev --output results/jev-typed-decisions.json
 ```
 
+## 다른 Mac에서 설치
+
+Apple Silicon Mac, macOS 14 이상에서만 실행됩니다. Laya-MLX가 Apple GPU를 사용하고 게임 실행 파일도 macOS용으로 빌드하므로 Windows PC나 Intel Mac에서는 실행되지 않습니다.
+
+폴더 전체는 수 GB이지만 대부분 내려받은 패키지와 모델입니다. git에 커밋된 파일만 옮기면 됩니다. 원격 저장소를 쓰지 않는다면 `git archive`로 압축하세요.
+
+```sh
+# 기존 Mac
+git archive -o jev-laya-lab.zip HEAD
+
+# 새 Mac: 압축을 푼 폴더에서
+curl -LsSf https://astral.sh/uv/install.sh | sh   # uv가 없을 때만. 설치 후 터미널을 새로 여세요
+uv sync
+./build_game.sh
+uv run python compare.py --validate
+uv run python web_console.py
+```
+
+`uv sync`는 `uv.lock`에 고정된 버전으로 약 1GB의 패키지를 설치합니다. Laya를 처음 실행할 때 모델 파일 약 1.4GB를 내려받습니다. 게임 실행 파일은 macOS 보안 검사(Gatekeeper)에 막힐 수 있으므로 `dist/`를 복사하지 말고 새 Mac에서 `./build_game.sh`로 다시 빌드하세요. Jev를 쓰려면 [준비](#준비)처럼 `JEV_API_KEY`를 설정하거나 WebView에 키를 입력합니다. 키를 압축 파일이나 프로젝트 파일에 넣지 마세요.
+
+모델을 다시 내려받지 않으려면 기존 Mac의 `.hf-cache/` 폴더를 프로젝트 폴더에 함께 복사하고 실행 전에 지정하세요.
+
+```sh
+export HF_HOME="$PWD/.hf-cache"
+```
+
+`.venv/`, `.uv-cache/`, `build/`, `dist/`는 옮기지 마세요. 새 Mac에서 다시 만들어지며 `.venv/`는 복사하면 경로가 맞지 않아 동작하지 않습니다. `results/`의 이전 비교 결과는 필요할 때만 옮기세요.
+
 ## 출처
 
 - [Jev API 명세](https://api.typesafe.ai/docs): `POST /v1/systemone`, `Choice` 질문과 응답 구조
