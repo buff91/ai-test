@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-from compare import OPTIONS, QUESTIONS, call_jev, make_laya_mlx_router, make_laya_router, summarize_answer
+from compare import OPTIONS, QUESTIONS, PROVIDERS, call_jev, make_laya_mlx_router, make_laya_router, summarize_answer
 from game_core import ACTIONS, SCENARIOS
 from game_ipc import GameClient
 
@@ -93,6 +93,7 @@ class Lab:
                 "error": self.error,
                 "scenarios": list(SCENARIOS),
                 "actions": list(ACTIONS),
+                "questions": QUESTIONS,
             }
 
     def run_model(self, provider=None, compare=None, apply=True, key=None):
@@ -136,13 +137,13 @@ class Lab:
             try:
                 with self.model_lock:
                     if provider == "jev":
-                        raw = call_jev(state["description"], key, "jev-latest", 30)
+                        raw = call_jev(state["description"], key, PROVIDERS["jev"]["model"], PROVIDERS["jev"]["timeout"])
                     else:
                         if provider not in self.routers:
                             factory = make_laya_mlx_router if provider == "laya-mlx" else make_laya_router
                             self.routers[provider] = factory()
                         raw = self.routers[provider].predict(
-                            state["description"], QUESTIONS, model="multilingual"
+                            state["description"], QUESTIONS, **({} if PROVIDERS[provider]["model"] == "auto" else {"model": PROVIDERS[provider]["model"]})
                         )
                 result = summarize_answer(raw)
                 if result["action"] not in OPTIONS:
@@ -165,6 +166,7 @@ class Lab:
                 "turn": state["snapshot"]["turn"],
                 "state": state["description"],
                 "before": state["snapshot"],
+                "questions": QUESTIONS,
                 "results": results,
                 "applied": False,
                 "events": [],

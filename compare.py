@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import math
 import os
 import sys
 import time
@@ -11,23 +12,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+from settings import OPTIONS, PROVIDERS, QUESTIONS
+
+
 ROOT = Path(__file__).resolve().parent
 DEFAULT_CASES = ROOT / "cases" / "game_actions.json"
-OPTIONS = {
-    "attack": "Attack an exposed enemy when it is safe and useful.",
-    "dodge": "Evade an imminent attack that is aimed at the current position.",
-    "reload": "Reload an empty or nearly empty weapon while safe.",
-    "retreat": "Move away from danger to survive or reach safety.",
-    "advance": "Move toward the next objective when the path is clear.",
-    "wait": "Hold position when acting now would be premature.",
-}
-QUESTIONS = {
-    "action": {
-        "type": "choice",
-        "instructions": "Which single action should the player take next based on this state?",
-        "criteria": OPTIONS,
-    }
-}
 
 
 def load_cases(path):
@@ -56,7 +45,7 @@ def call_jev(state, key, model, timeout):
         ensure_ascii=False,
     ).encode("utf-8")
     request = urllib.request.Request(
-        "https://api.typesafe.ai/v1/systemone",
+        PROVIDERS["jev"]["endpoint"],
         data=payload,
         headers={
             "Authorization": "Bearer " + key,
@@ -87,9 +76,20 @@ def make_laya_mlx_router():
 def summarize_answer(result):
     answer = result["answers"]["action"]
     action = answer["choice"]
+    if action not in OPTIONS:
+        raise ValueError("Model returned an unknown action: %s" % action)
+    danger = result["answers"]["danger"]
+    incoming = result["answers"]["incoming_attack"]
+    for value, maximum in ((danger["score"], len(QUESTIONS["danger"]["criteria"]) - 1),
+                           (incoming["noul"], 1)):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= maximum:
+            raise ValueError("Model returned an invalid score or noul value")
     probabilities = answer.get("probabilities", {})
     return {
         "action": action,
+        "danger": danger["score"],
+        "incoming_attack": incoming["noul"],
+        "answers": result["answers"],
         "probability": probabilities.get(action),
         "confidence": answer.get("confidence"),
         "probabilities": probabilities,
@@ -104,7 +104,8 @@ def run_case(provider, case, args, routers, key):
         if provider == "jev":
             result = call_jev(case["state"], key, args.jev_model, args.timeout)
         else:
-            kwargs = {} if args.laya_model == "auto" else {"model": args.laya_model}
+            model = args.laya_model or PROVIDERS[provider]["model"]
+            kwargs = {} if model == "auto" else {"model": model}
             result = routers[provider].predict(case["state"], QUESTIONS, **kwargs)
         row = summarize_answer(result)
         row["status"] = "ok"
@@ -135,20 +136,21 @@ def main():
     parser.add_argument("--cases", type=Path, default=DEFAULT_CASES)
     parser.add_argument("--output", type=Path, help="Write the full comparison as JSON")
     parser.add_argument("--validate", action="store_true", help="Check cases without calling models")
-    parser.add_argument("--jev-model", default="jev-latest")
+    parser.add_argument("--jev-model", default=PROVIDERS["jev"]["model"])
     parser.add_argument(
         "--laya-model",
         choices=["auto", "english", "multilingual", "typed-decisions"],
-        default="multilingual",
+        default=None,
+        help="Override both local models; defaults come from config/providers.json",
     )
-    parser.add_argument("--timeout", type=float, default=30.0)
+    parser.add_argument("--timeout", type=float, default=PROVIDERS["jev"]["timeout"])
     args = parser.parse_args()
 
     try:
         cases = load_cases(args.cases)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         parser.error(str(exc))
-    print("Validated %d cases with %d action options." % (len(cases), len(OPTIONS)))
+    print("Validated %d cases with %d action options and %d questions (choice/score/noul)." % (len(cases), len(OPTIONS), len(QUESTIONS)))
     if args.validate:
         return 0
 
@@ -182,8 +184,8 @@ def main():
             if row["status"] == "ok":
                 marker = "✓" if row["action"] == case.get("reference_action") else "·"
                 print(
-                    "%s %-18s %-8s %-8s %8.1f ms" %
-                    (marker, case["id"], provider, row["action"], row["elapsed_ms"])
+                    "%s %-18s %-8s %-8s %8.1f ms  danger=%.2f  incoming=%.1f%%" %
+                    (marker, case["id"], provider, row["action"], row["elapsed_ms"], row["danger"], row["incoming_attack"] * 100)
                 )
             else:
                 print("! %s %s: %s" % (case["id"], provider, row["error"]))
@@ -194,6 +196,8 @@ def main():
             "created_at": datetime.now(timezone.utc).isoformat(),
             "cases": str(args.cases),
             "note": "Wall time includes API/network for Jev and local inference for Laya. Each local runtime's first call may load/download a model. Laya and Laya-MLX use the same model selection but different execution engines.",
+            "questions": QUESTIONS,
+            "providers": PROVIDERS,
             "rows": rows,
         }
         args.output.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

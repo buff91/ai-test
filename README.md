@@ -56,9 +56,39 @@ uv run python compare.py --provider all --output results/all.json
 
 Laya-MLX를 추가한 첫 비교에서 두 로컬 방식은 5개 사례 모두 같은 행동을 골랐습니다. 첫 호출을 제외한 4개 호출의 중간값은 일반 Laya **21.05ms**, Laya-MLX **10.75ms**였습니다. MLX의 기본 장치는 Apple GPU로 확인했습니다. 이는 이 Mac과 이 다섯 사례에서 관찰한 값이며, 폭넓은 성능 평가가 아닙니다. 원자료는 `results/local.json`에 저장됩니다.
 
-## 내 사례 넣기
+## 공통 설정과 폴더 구조
 
-`cases/game_actions.json`에서 `state`를 실제 게임 상태 설명으로 바꾸거나 사례를 추가하세요. 각 항목에 고유 `id`, `state`, 선택 사항인 `reference_action`을 넣습니다. 행동 목록과 질문은 `compare.py` 상단의 `OPTIONS`, `QUESTIONS`에서 바꿀 수 있습니다. 실제 게임 연동 단계에서는 게임 상태를 이 입력 형태로 만들고, 선택된 행동을 게임 코드가 실행하도록 연결하면 됩니다.
+```text
+config/
+  questions.json     # Choice·Score·Noul의 질문과 평가 기준
+  providers.json     # Jev·Laya·Laya-MLX별 모델과 Jev 연결 설정
+settings.py          # 공통 설정 로더
+cases/               # 비교용 입력 사례
+results/             # 비교 결과와 실행 기록
+web/                 # 로컬 대시보드
+```
+
+`config/questions.json`의 질문을 세 모델에 동일하게 전달합니다.
+
+| 질문 ID | 유형 | 정의 | 결과 |
+|---|---|---|---|
+| `action` | Choice | 현재 상태에서 실행할 다음 행동 하나 | 공격·회피·재장전·후퇴·전진·대기 |
+| `danger` | Score | 다음 행동을 하기 전 현재 상태의 즉각적인 위험도 | 0=안전, 1=위협, 2=즉각적인 피격 또는 사망 위험. 중간 소수값도 가능 |
+| `incoming_attack` | Noul | 이동·공격·회피 등 아무 행동도 하지 않으면 이번 턴 적 공격이 맞는가 | 참일 가능성 0~1. 공격 시점·거리·엄폐를 고려 |
+
+실제 게임은 `action`만 적용합니다. Score·Noul은 분석용이며 행동을 덮어쓰지 않습니다. CLI·WebView·Tk 창에서 세 결과를 표시하고, JSON에는 `answers` 전체(Score 단계별 확률·신뢰도 등)를 보존합니다. 기존 결과 파일은 Choice만 실행했던 기록이며 새 결과와 질문 수·소요 시간이 다릅니다.
+
+`config/providers.json`에서 Jev는 `model`, `endpoint`, `timeout`, 두 Laya는 각각 `model`을 설정합니다. 기본값은 Jev `jev-latest`, 두 Laya `multilingual`입니다. 이 설정을 CLI·WebView·Tk 창이 공통으로 읽습니다. CLI의 `--jev-model`, `--laya-model`, `--timeout`은 해당 실행에만 우선 적용되며 파일을 수정하지 않습니다. Laya의 `auto`는 모델 자동 선택입니다.
+
+설정을 수정한 뒤 CLI를 다시 실행하거나 WebView/Tk 프로그램을 재시작하세요. API 키는 설정 파일에 넣지 않고 `JEV_API_KEY` 또는 화면 입력을 사용합니다.
+
+`cases/game_actions.json`에서 `state`를 실제 게임 상태 설명으로 바꾸거나 사례를 추가하세요. 각 항목에 고유 `id`, `state`, 선택 사항인 `reference_action`을 넣습니다. 임시 기대 행동은 Choice만 비교하며 Score·Noul의 정답 평가는 아직 정의하지 않았습니다. 게임의 6가지 행동 이름은 게임 명령과 연결되어 있으므로 이름이나 개수를 바꾸려면 게임 및 화면 코드도 함께 수정해야 합니다.
+
+```sh
+uv run python compare.py --validate
+uv run python compare.py --provider local --output results/local-typed-decisions.json
+uv run python compare.py --provider jev --output results/jev-typed-decisions.json
+```
 
 ## 출처
 

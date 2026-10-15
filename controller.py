@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog
 
-from compare import OPTIONS, QUESTIONS, call_jev, make_laya_mlx_router, make_laya_router, summarize_answer
+from compare import OPTIONS, QUESTIONS, PROVIDERS, call_jev, make_laya_mlx_router, make_laya_router, summarize_answer
 from game_core import ACTIONS, ACTION_KO, SCENARIOS
 from game_ipc import GameClient
 
@@ -259,12 +259,12 @@ class TestConsole:
             try:
                 with self.model_lock:
                     if provider == "jev":
-                        raw = call_jev(state["description"], key, "jev-latest", 30)
+                        raw = call_jev(state["description"], key, PROVIDERS["jev"]["model"], PROVIDERS["jev"]["timeout"])
                     else:
                         if provider not in self.routers:
                             factory = make_laya_mlx_router if provider == "laya-mlx" else make_laya_router
                             self.routers[provider] = factory()
-                        raw = self.routers[provider].predict(state["description"], QUESTIONS, model="multilingual")
+                        raw = self.routers[provider].predict(state["description"], QUESTIONS, **({} if PROVIDERS[provider]["model"] == "auto" else {"model": PROVIDERS[provider]["model"]}))
                 result = summarize_answer(raw)
                 if result["action"] not in OPTIONS:
                     raise ValueError("모델이 알 수 없는 행동을 반환했습니다.")
@@ -304,7 +304,7 @@ class TestConsole:
                             self._show_game_state(reply)
                         continue
                     self._show_game_state(reply)
-                    self.history.append({"state": state["description"], "before": reply["before"],
+                    self.history.append({"questions": QUESTIONS, "state": state["description"], "before": reply["before"],
                                          "results": results, "action_applied": chosen["action"],
                                          "events": reply["events"], "after": reply["snapshot"]})
                     self._log("턴 %02d · %s → %s · %s" %
@@ -335,6 +335,8 @@ class TestConsole:
             probabilities = result.get("probabilities") or {}
             summary = "   ".join("%s %.0f%%" % (ACTION_KO[action], 100 * float(probabilities.get(action) or 0)) for action in ACTIONS)
             self.label(card, summary, 9, MUTED).pack(anchor="w", pady=(4, 0))
+            detail = "위험도 %.2f / %d · 피격 가능성 %.1f%%" % (result["danger"], len(QUESTIONS["danger"]["criteria"]) - 1, result["incoming_attack"] * 100)
+            self.label(card, detail, 10, color).pack(anchor="w", pady=(4, 0))
 
     def _save(self):
         if not self.history:

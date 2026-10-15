@@ -156,7 +156,7 @@ function modelHtml(result, secondary=false) {
     const value=Math.max(0,Math.min(1,Number(result.probabilities?.[action]||0)));
     return `<div class="choice-row ${result.action===action?'winner':''}"><span>${names[action]}</span><div class="choice-track"><div class="choice-fill" style="width:${value*100}%"></div></div><span class="score">${(value*100).toFixed(0)}%</span></div>`;
   }).join('');
-  return `<div class="model-block ${secondary?'secondary-block':''}"><div class="model-name ${secondary?'secondary':''}"><span>${esc(result.provider.toUpperCase())}</span><span>${esc(result.elapsed_ms)} ms</span></div>${rows}</div>`;
+  return `<div class="model-block ${secondary?'secondary-block':''}"><div class="model-name ${secondary?'secondary':''}"><span>${esc(result.provider.toUpperCase())}</span><span>${esc(result.elapsed_ms)} ms</span></div>${rows}<div class="decision-event">위험도 ${Number(result.danger).toFixed(2)} / ${(latest?.questions?.danger?.criteria?.length ?? 3)-1} · 피격 가능성 ${(Number(result.incoming_attack)*100).toFixed(1)}%</div><div class="decision-event">위험도 신뢰도: ${esc(result.answers?.danger?.confidence ?? '—')} · 단계별 확률: ${esc(JSON.stringify(result.answers?.danger?.probabilities ?? {}))}</div></div>`;
 }
 
 function updateDecisions(data) {

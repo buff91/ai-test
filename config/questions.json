@@ -1,0 +1,27 @@
+{
+  "action": {
+    "type": "choice",
+    "instructions": "Which single action should the player take next based on this state?",
+    "criteria": {
+      "attack": "Attack an exposed enemy when it is safe and useful.",
+      "dodge": "Evade an imminent attack that is aimed at the current position.",
+      "reload": "Reload an empty or nearly empty weapon while safe.",
+      "retreat": "Move away from danger to survive or reach safety.",
+      "advance": "Move toward the next objective when the path is clear.",
+      "wait": "Hold position when acting now would be premature."
+    }
+  },
+  "danger": {
+    "type": "score",
+    "instructions": "How much immediate danger is the player in, before taking the next action? Assess the current state, not the result of the action you would choose.",
+    "criteria": [
+      "Safe: no enemy can hit the player imminently, or cover blocks all incoming attacks.",
+      "Threatened: an enemy can attack soon, but no unavoidable or lethal attack is imminent.",
+      "Critical: an attack is about to hit the exposed player, or the player is at immediate risk of death."
+    ]
+  },
+  "incoming_attack": {
+    "type": "noul",
+    "instructions": "Will an enemy attack hit the player this turn if the player holds position without attacking, dodging, or otherwise acting? Consider attack timing, range, and cover. Answer based only on the supplied state."
+  }
+}
