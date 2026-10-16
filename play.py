@@ -1,21 +1,23 @@
 """Games under games/: check, play live with a model, and compare models offline.
 
-A game folder holds what the game is (game.json with its type, questions.json,
-cases.json). How to reach it lives in games/<id>/interfaces/<name>/: "kbm" (screen +
-keyboard/mouse) or "socket" (the build serves its own state). A game may have
-several interfaces or none (then it is compared offline only). The type in
-config/game_types.json decides which model plays (live) and which only shadow.
+A game folder holds what the game is (game.json with its type and policy,
+questions.json with its Choice/Score/Noul questions, cases.json with states and their
+truth). How to reach it lives in games/<id>/interfaces/<name>/: "kbm" (screen +
+keyboard/mouse) or "socket" (the game serves its own state, and sims/ games also the
+truth). The type in config/game_types.json decides which model plays (live) and which
+only shadow. Every answer that has a truth is graded per question.
 
   uv run python play.py list
   uv run python play.py types
   uv run python play.py new mygame --type realtime.action [--interface kbm|socket]
   uv run python play.py add-interface mygame socket
-  uv run python play.py doctor action_sample
-  uv run python play.py observe action_sample --save frame.png
-  uv run python play.py run arena --provider laya-mlx --steps 5
-  uv run python play.py run action_sample --interface kbm --dry-run --steps 5
-  uv run python play.py export-cases action_sample results/games/action_sample/<session>
-  uv run python play.py compare card_sample --provider all
+  uv run python play.py doctor arena
+  uv run python play.py observe arena
+  uv run python play.py run arena --provider laya-mlx --steps 20
+  uv run python play.py run shooter --policy --episodes 3
+  uv run python play.py report results/games/arena/<session>
+  uv run python play.py export-cases arena results/games/arena/<session>
+  uv run python play.py compare cards --provider all
   uv run python play.py matrix --provider local
 """
 
@@ -28,8 +30,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from gamelab.game_case import CONNECTORS, GAMES, GameCase, list_games
+from gamelab import grade
 from gamelab.game_types import load_types
-from gamelab.runner import RESULTS, export_cases, play
+from gamelab.policy import Policy
+from gamelab.runner import RESULTS, export_cases, format_session, play, report
 
 
 PROVIDER_GROUPS = {"all": ["jev", "laya", "laya-mlx"], "local": ["laya", "laya-mlx"]}
@@ -88,7 +92,7 @@ def cmd_new(args):
     print("만들었습니다: %s (type=%s)" % (target, args.type))
     if args.interface:
         _add_interface(target, args.interface, args.interface, args.games_dir)
-    print("다음: questions.json의 선택지와 cases.json의 상태·기대 행동을 채우세요.%s" % (
+    print("다음: questions.json의 질문과 cases.json의 상태·truth(정답)를 채우세요.%s" % (
         "" if args.interface else " 실제 게임에 연결하려면 play.py add-interface %s kbm|socket" % args.game))
 
 
@@ -138,6 +142,8 @@ def cmd_doctor(args):
             print("✓ 창: %s %dx%d @ (%d, %d)" % (game.config["window"]["owner"], window["width"], window["height"], window["x"], window["y"]))
         print("✓ 상태: %s" % json.dumps(observed["state"], ensure_ascii=False))
         print("✓ 모델에 보낼 설명: %s" % (observed["description"] or "(없음, state JSON을 그대로 보냄)"))
+        print("%s 게임이 주는 정답(truth): %s" % (("✓", json.dumps(observed["truth"], ensure_ascii=False)) if observed.get("truth")
+                                             else ("·", "없음 (cases.json의 truth로만 채점)")))
 
 
 def cmd_observe(args):
@@ -147,7 +153,7 @@ def cmd_observe(args):
         observed = client.request("observe", save_frame=save)
     if not observed.get("ok"):
         sys.exit("! %s" % observed.get("error"))
-    print(json.dumps({k: observed[k] for k in ("state", "description", "signature")}, indent=2, ensure_ascii=False))
+    print(json.dumps({k: observed.get(k) for k in ("state", "description", "truth", "signature")}, indent=2, ensure_ascii=False))
     if save and observed.get("frame_saved"):
         print("화면 저장: %s" % save)
 
@@ -166,18 +172,28 @@ def cmd_run(args):
         shadows.remove("jev")
     decider = for_game(live, game, key)
     shadow_deciders = [for_game(p, game, key) for p in shadows]
+    escalate_to = (game.policy.get("escalate") or {}).get("to")
+    escalate_decider = None
+    if args.policy and escalate_to and escalate_to != live:
+        if escalate_to == "jev" and not key:
+            print("escalate 건너뜀: JEV_API_KEY가 없습니다.", file=sys.stderr)
+        else:
+            escalate_decider = for_game(escalate_to, game, key)
+    policy = Policy(game.policy, game.questions, enabled=args.policy, escalate_decider=escalate_decider)
     kbm = game.connector == "kbm"
     realtime = game.type_spec["timing"] == "realtime"
     mode = ("DRY-RUN(입력 안 보냄)" if args.dry_run else "실제 입력") if kbm else "게임 훅"
-    print("%s 실행: type=%s interface=%s(%s) live=%s shadow=%s %s." % (
-        game.id, game.type, game.interface, game.connector, live, ",".join(shadows) or "-", mode))
+    print("%s 실행: type=%s interface=%s(%s) live=%s shadow=%s %s, policy=%s." % (
+        game.id, game.type, game.interface, game.connector, live, ",".join(shadows) or "-", mode,
+        ("켜짐" if args.policy else "기록만") if policy else "없음"))
     if kbm:
         print("마우스를 화면 왼쪽 위 모서리로 옮기거나 Ctrl+C로 멈춥니다.")
     pause = kbm and (args.pause or bool(game.config["pause_key"] and not args.no_pause))
     with connect(game, args, dry_run=args.dry_run, reflex=args.reflex) as client:
         session = play(client, decider, game.config, steps=args.steps, pause=pause,
                        record=not args.no_record, save_frames=args.frames, shadows=shadow_deciders,
-                       shadow_wait_ms=game.config["interval_ms"] if realtime else None)
+                       shadow_wait_ms=game.config["interval_ms"] if realtime else None,
+                       questions=game.questions, policy=policy, episodes=args.episodes)
     if session:
         print("기록: %s" % session)
 
@@ -186,7 +202,12 @@ def cmd_export(args):
     game = GameCase(args.game, args.games_dir)
     out = args.output or game.dir / "cases.recorded.json"
     added = export_cases(args.session, out)
-    print("%d개 케이스를 %s에 추가했습니다. reference_action을 채운 뒤 compare --cases로 비교하세요." % (added, out))
+    print("%d개 케이스를 %s에 추가했습니다. truth가 비어 있는 케이스는 채운 뒤 compare --cases로 비교하세요." % (added, out))
+
+
+def cmd_report(args):
+    summary = report(args.session)
+    print(format_session(summary) if summary["steps"] else "기록된 step이 없습니다.")
 
 
 def cmd_compare(args):
@@ -199,14 +220,20 @@ def cmd_compare(args):
     rows = []
     for case in cases:
         for decider in deciders:
-            row = {**decider.decide(case["state"]), "case_id": case["id"], "reference_action": case.get("reference_action")}
+            row = {**decider.decide(case["state"]), "case_id": case["id"], "truth": case.get("truth")}
+            row["grade"] = grade.grade(row.get("answers"), row["truth"], game.questions) if row["status"] == "ok" else None
             rows.append(row)
             if row["status"] == "ok":
-                mark = "✓" if row["action"] == case.get("reference_action") else "·"
-                print("%s %-22s %-8s %-15s %8.1f ms  p=%.2f" % (mark, case["id"], decider.provider, row["action"],
-                                                               row["model_ms"], row.get("probability") or 0))
+                correct = ((row["grade"] or {}).get("action") or {}).get("correct")
+                print("%s %-22s %-8s %-16s %8.1f ms  p=%.2f  %s" % (
+                    "✓" if correct else "·", case["id"], decider.provider, row["action"], row["model_ms"],
+                    row.get("probability") or 0, grade.marks(row["grade"])))
             else:
                 print("! %s %s: %s" % (case["id"], decider.provider, row["error"]))
+    for decider in deciders:
+        grades = [r["grade"] for r in rows if r["provider"] == decider.provider and r.get("grade")]
+        if grades:
+            print("\n[%s]\n%s" % (decider.provider, grade.format_summary(grade.summarize(grades))))
     out = args.output or RESULTS / game.id / ("compare-%s.json" % datetime.now().strftime("%Y%m%d-%H%M%S"))
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({"created_at": datetime.now(timezone.utc).isoformat(), "game": game.id,
@@ -311,7 +338,13 @@ def main():
     p.add_argument("--reflex", action="store_true", help="kbm 게임만: observer.reflex() 빠른 규칙도 실행")
     p.add_argument("--frames", action="store_true", help="kbm 게임만: 매 판단 화면을 PNG로 저장")
     p.add_argument("--no-record", action="store_true")
+    p.add_argument("--policy", action="store_true",
+                   help="game.json policy를 실제로 적용 (기본: 발동 여부만 기록하고 행동은 바꾸지 않음)")
+    p.add_argument("--episodes", type=int, default=0, help="판이 끝나면 다음 시나리오로 리셋, 이 판 수만큼 하고 멈춤 (0=제한 없음)")
     p.set_defaults(fn=cmd_run)
+    p = sub.add_parser("report", help="run 기록의 질문별 채점·policy 요약")
+    p.add_argument("session", type=Path)
+    p.set_defaults(fn=cmd_report)
     p = sub.add_parser("export-cases", help="run 기록을 오프라인 비교 케이스로 변환")
     p.add_argument("game")
     p.add_argument("session", type=Path)

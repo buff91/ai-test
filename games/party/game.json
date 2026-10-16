@@ -1,0 +1,19 @@
+{
+  "name": "Party · 파티 RPG 전투 (턴제 RPG)",
+  "type": "turn.rpg",
+  "interface": "socket",
+  "policy": {
+    "guards": [
+      {
+        "name": "동료 쓰러짐 직전",
+        "when": "danger >= 1.5",
+        "allow": [
+          "heal",
+          "guard",
+          "use_item",
+          "aoe_skill"
+        ]
+      }
+    ]
+  }
+}

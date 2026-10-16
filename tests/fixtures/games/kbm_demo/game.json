@@ -1,0 +1,5 @@
+{
+  "name": "테스트용 · 키보드 중심 액션 게임 (kbm 연결 확인)",
+  "type": "realtime.action",
+  "interface": "kbm"
+}

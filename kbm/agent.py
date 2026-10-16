@@ -39,6 +39,7 @@ class AgentService:
             "window": window,
             "state": observed["state"],
             "description": observed["description"],
+            "truth": observed.get("truth"),
             "signature": self.game.signature(observed["state"]),
         }
 

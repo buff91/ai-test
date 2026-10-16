@@ -1,0 +1,27 @@
+{
+  "action": {
+    "type": "choice",
+    "instructions": "Which single action should the player take next based on this state?",
+    "criteria": {
+      "attack": "Shoot the nearest enemy ahead when it is within range and ammo is loaded.",
+      "dodge": "Evade a gunner shot that will fire this turn.",
+      "reload": "Reload an empty or nearly empty weapon while safe.",
+      "retreat": "Step back, for example away from a rusher or out of a gunner's range.",
+      "advance": "Move toward the exit when the next tile is free.",
+      "wait": "Hold position when acting now would be premature."
+    }
+  },
+  "danger": {
+    "type": "score",
+    "instructions": "How much immediate danger is the player in, before taking the next action? Assess the current state, not the result of the action you would choose.",
+    "criteria": [
+      "Safe: holding still for the next two turns costs no health.",
+      "Threatened: holding still costs health next turn, but not this turn.",
+      "Critical: holding still costs health this turn, or the player is about to be defeated."
+    ]
+  },
+  "incoming_attack": {
+    "type": "noul",
+    "instructions": "If the player chooses wait this turn, will an enemy attack reduce the player's health? Answer based only on the supplied state."
+  }
+}

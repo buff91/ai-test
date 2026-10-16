@@ -1,0 +1,22 @@
+{
+  "action": {
+    "type": "choice",
+    "instructions": "In this turn-based party RPG battle, which single action should the paladin take?",
+    "criteria": {
+      "attack": "Attack the weakest enemy, especially to finish it, when the party is safe.",
+      "aoe_skill": "Use the area skill when several enemies are present and mana allows.",
+      "heal": "Heal an ally whose health is low enough to fall this round.",
+      "guard": "Guard to halve a big attack aimed at the paladin this round.",
+      "use_item": "Use a phoenix feather to revive the fallen knight."
+    }
+  },
+  "danger": {
+    "type": "score",
+    "instructions": "If the paladin simply attacks, how likely is a party member to fall?",
+    "criteria": [
+      "Unlikely: nobody falls this round or the next.",
+      "Possible: someone falls next round.",
+      "Very likely: someone falls this round."
+    ]
+  }
+}

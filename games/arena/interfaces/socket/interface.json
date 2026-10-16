@@ -1,9 +1,14 @@
 {
   "connector": "socket",
   "launch": {
-    "command": ["dist/ArenaGame/ArenaGame"],
-    "socket_arg": "--socket",
-    "build_hint": "./build_game.sh로 먼저 빌드하세요."
+    "command": [
+      "{python}",
+      "-m",
+      "sims",
+      "serve",
+      "arena"
+    ],
+    "socket_arg": "--socket"
   },
   "interval_ms": 300,
   "actions": {

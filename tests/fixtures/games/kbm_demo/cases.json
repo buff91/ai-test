@@ -1,0 +1,7 @@
+[
+  {"id": "warning_dodge", "state": "The player's health is high (90%). The weapon has 60% ammunition. An enemy is visible close to the player. A red warning shows an incoming attack aimed at the player.", "truth": {"action": ["dodge"]}},
+  {"id": "clear_shot", "state": "The player's health is high (85%). The weapon has 80% ammunition. An enemy is visible at a distance.", "truth": {"action": ["attack"]}},
+  {"id": "empty_safe", "state": "The player's health is high (100%). The weapon is empty. No enemy is visible and the path ahead looks clear.", "truth": {"action": ["reload"]}},
+  {"id": "low_hp_close", "state": "The player's health is critical (20%). The weapon has 10% ammunition. An enemy is visible close to the player.", "truth": {"action": ["retreat"]}},
+  {"id": "clear_path", "state": "The player's health is high (100%). The weapon has 100% ammunition. No enemy is visible and the path ahead looks clear.", "truth": {"action": ["advance"]}}
+]

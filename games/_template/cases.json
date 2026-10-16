@@ -1,3 +1,3 @@
 [
-  {"id": "example", "state": "The player's health is 80%.", "reference_action": "wait"}
+  {"id": "example", "state": "Describe one game state in plain sentences.", "truth": {"action": ["act"], "danger": 1, "incoming_attack": false}}
 ]

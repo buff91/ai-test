@@ -1,7 +1,0 @@
-[
-  {"id": "ally_low", "state": "Active character: cleric with 40 mana. Ally knight has 12/150 HP and is targeted by a boss. Two enemies remain at full health.", "reference_action": "heal"},
-  {"id": "many_weak", "state": "Active character: mage with 60/80 mana. Five goblins remain, each with about 20 HP. The whole party is above 70% HP.", "reference_action": "aoe_skill"},
-  {"id": "finish_boss", "state": "Active character: rogue. The boss has 15 HP left. Rogue's single attack deals about 30 damage. Party health is fine.", "reference_action": "attack"},
-  {"id": "fallen_ally", "state": "Active character: fighter with no healing skills. The party healer has fallen (0 HP). A Phoenix Feather that revives an ally is in the inventory.", "reference_action": "use_item"},
-  {"id": "charging_strike", "state": "Active character: knight with 60/150 HP. The dragon is charging a huge strike that will target the knight next turn. Allies are healthy.", "reference_action": "guard"}
-]

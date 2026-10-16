@@ -1,5 +1,0 @@
-{
-  "name": "예시 · 마우스 중심 탑다운 게임 (우클릭 이동·스킬 Q·물약 1)",
-  "type": "realtime.topdown",
-  "interface": "kbm"
-}

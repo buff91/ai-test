@@ -11,7 +11,7 @@
 
 | 인터페이스 종류 (connector) | 언제 쓰나 | 게임 상태를 얻는 법 | 행동을 넣는 법 |
 |---|---|---|---|
-| `socket` | 게임 빌드에 테스트 훅이 있을 때 (예: 이 프로젝트의 ArenaGame) | 게임이 소켓으로 상태를 보내 줌 | 소켓으로 행동 이름을 보냄 |
+| `socket` | 게임 빌드에 테스트 훅이 있을 때 (예: 이 프로젝트의 `sims/` 게임 6종) | 게임이 소켓으로 상태(와 정답)를 보내 줌 | 소켓으로 행동 이름을 보냄 |
 | `kbm` | 훅이 없는 남의 빌드라 화면과 입력 장치만 쓸 수 있을 때 | 게임 창을 캡처해 화면을 해석 | 실제 키보드·마우스 입력을 보냄 |
 | (없음) | 실제 게임 없이 상태 예시로 모델만 비교할 때 | `cases.json`의 상태 설명 | 없음 (비교 전용) |
 
@@ -149,11 +149,11 @@ export HF_HOME="$PWD/.hf-cache"
 
 ```text
 games/arena/
-  game.json              이름, 타입, 기본 인터페이스        {"name", "type": "turn.tactics", "interface": "socket"}
-  questions.json         모델에게 보여 줄 선택지
-  cases.json             비교용 상태와 기대 행동
+  game.json              이름, 타입, 기본 인터페이스, policy   {"name", "type": "turn.tactics", "interface": "socket", "policy": {...}}
+  questions.json         모델에게 보낼 Choice·Score·Noul 질문
+  cases.json             비교용 상태와 질문별 정답(truth)
   interfaces/
-    socket/interface.json    socket으로 연결하는 법 (실행 파일, 행동 → 게임 명령)
+    socket/interface.json    socket으로 연결하는 법 (실행 명령, 행동 → 게임 명령)
     kbm/interface.json       (필요하면) 키보드·마우스로 연결하는 법 + observer.py
 ```
 
@@ -164,29 +164,70 @@ uv run python play.py types     # 타입별 지연 예산과 live/shadow 모델
 
 ```text
 턴제 · 전술  (turn.tactics)
-  arena           socket         jev +laya-mlx      ArenaGame (턴제 예제 게임)
+  arena           socket         jev +laya-mlx      Arena · 포탑 돌파 (턴제 전술)
 턴제 · 카드/덱빌딩  (turn.card)
-  card_sample     비교 전용      jev +laya-mlx      예시 · 카드/덱빌딩 전투
+  cards           socket         jev +laya-mlx      Cards · 덱빌딩 전투 (턴제 카드)
 턴제 · RPG 전투  (turn.rpg)
-  rpg_sample      비교 전용      jev +laya-mlx      예시 · 턴제 RPG 파티 전투
+  party           socket         jev +laya-mlx      Party · 파티 RPG 전투 (턴제 RPG)
 실시간 · 액션/슈터  (realtime.action)
-  action_sample   kbm            laya-mlx           예시 · 키보드 중심 액션 게임
+  shooter         socket         laya-mlx           Shooter · 복도 돌파 (실시간 액션)
 실시간 · 탑다운 ARPG/MOBA  (realtime.topdown)
-  topdown_sample  kbm            laya-mlx           예시 · 마우스 중심 탑다운 게임
+  swarm           socket         laya-mlx           Swarm · 몰려오는 무리 (실시간 탑다운)
 실시간 · 레이싱  (realtime.racing)
-  racing_sample   비교 전용      laya-mlx           예시 · 레이싱 주행
+  racer           socket         laya-mlx           Racer · 3차선 레이스 (실시간 레이싱)
 ```
 
 `jev +laya-mlx`는 Jev가 실제로 플레이하고 Laya-MLX가 같은 장면을 함께 판단해 기록만 한다는 뜻입니다. 인터페이스가 여러 개인 게임은 기본값에 `*`가 붙습니다.
 
-| 게임 | 설명 |
-|---|---|
-| `arena` | 이 프로젝트의 ArenaGame. `./build_game.sh` 후 바로 실행됨 |
-| `action_sample`, `topdown_sample` | kbm 인터페이스 형식을 보여 주는 **예시**. 창 이름(`GameAppName`)과 화면 위치·색이 임시값임 |
-| `card_sample`, `rpg_sample`, `racing_sample` | 장르별 비교 세트. 인터페이스 없이 상태 설명 5개씩으로 모델을 비교함 |
-| `_template` | `play.py new`와 `add-interface`가 복사하는 템플릿 |
+여섯 게임은 모두 [`sims/`](sims/)의 시뮬레이션입니다. 빌드 없이 `play.py`가 `python -m sims serve <게임>`으로 직접 띄웁니다. 규칙을 게임이 전부 알고 있으므로, 매 상태마다 **질문별 정답(truth)** 을 계산해 상태와 함께 보냅니다. 모델에게는 설명문만 가고 정답은 채점에만 씁니다.
 
-실제 게임을 붙일 때는 예시를 고치기보다 그 게임 이름으로 새로 만드세요. `play.py new <게임 이름> --type <타입>`으로 시작해 `add-interface`로 연결 방법을 붙입니다.
+| 게임 | 장르 | 질문 | 시나리오 |
+|---|---|---|---|
+| `arena` | 포탑을 부수고 출구로 (`game_core.Arena`) | action · danger · incoming_attack | 5 |
+| `cards` | 덱 순서와 적 의도가 보이는 카드 전투 | action · danger · incoming_attack | 5 |
+| `party` | 성기사 + 자동 기사 vs 고블린·드래곤 | action · danger (Noul 없음) | 5 |
+| `shooter` | 조준 예고하는 사수, 돌진병이 있는 복도 | action · danger · incoming_attack | 6 |
+| `swarm` | 다가오는 적 무리, 스킬·물약·후퇴 공간 | action · danger · incoming_attack | 5 |
+| `racer` | 속도 제한 코너와 장애물이 있는 3차선 | action · danger · crash_ahead | 5 |
+| `_template` | `play.py new`와 `add-interface`가 복사하는 템플릿 | | |
+
+```sh
+uv run python -m sims play swarm --show-truth     # 터미널에서 직접 플레이 (정답을 보면서)
+uv run python -m sims cases racer --output games/racer/cases.json   # 정답이 붙은 케이스 다시 만들기
+```
+
+실제 게임을 붙일 때는 그 게임 이름으로 새로 만드세요. `play.py new <게임 이름> --type <타입>`으로 시작해 `add-interface`로 연결 방법을 붙입니다. kbm 연결 예시는 [tests/fixtures/games/kbm_demo](tests/fixtures/games/kbm_demo)에 있습니다(테스트용, 창 이름과 화면 좌표는 임시값).
+
+### Choice · Score · Noul: 채점과 제어
+
+| 유형 | 정답(truth) 형식 | 채점 | 시뮬레이션의 정답 정의 |
+|---|---|---|---|
+| Choice (`action`) | 맞는 행동 목록 | 정답률 | 탐색(게임마다 7~10수 앞)으로 가치가 가장 높은 행동들. 모든 행동이 같으면 채점하지 않음 |
+| Score (`danger`) | 단계 번호 0..N-1 | 평균 오차, 단계 일치율 | 가만히 있을 때 이번 턴에 피해/패배 = 2, 다음 턴에 = 1, 아니면 0 (카드·RPG·레이싱은 질문 문구에 맞춘 정의) |
+| Noul (`incoming_attack`) | true/false 또는 0..1 | Brier 점수(0이 완벽, 늘 0.5면 0.25), 정답률 | 이번 턴에 가만히 있으면 체력이 줄어드는가 |
+
+`run`은 매 step을 채점해 출력하고(`[action✓ danger 1.8/2 incoming_attack 0.90/hit]`), 끝나면 모델별·질문별 요약을 `summary.json`에 저장합니다. `compare`와 `matrix`는 `cases.json`의 truth로 같은 방식으로 채점합니다.
+
+**policy**: `game.json`에 Score·Noul 답으로 행동을 제어하는 규칙을 둡니다.
+
+```json
+"policy": {
+  "guards": [{"name": "피격 직전", "when": "incoming_attack >= 0.7", "allow": ["dodge", "retreat", "attack"]}],
+  "escalate": {"when": "danger >= 1.5", "to": "jev"}
+}
+```
+
+- `guards`: 조건이 맞는데 고른 행동이 `allow`에 없으면, `allow` 중 모델이 Choice에서 가장 높게 본 행동으로 바꿉니다.
+- `escalate`: 조건이 맞으면 `to` 모델에게 다시 묻고 그 답을 씁니다. 실시간 게임에서 평소엔 빠른 모델, 위험할 때만 강한 모델을 쓰는 용도입니다.
+- 기본은 **기록만** 합니다. 규칙이 발동했는지(`⚑피격 직전`)만 남기고 행동은 바꾸지 않으므로, Choice와 Score·Noul이 서로 어긋나는 장면을 찾는 데 씁니다. `run --policy`를 붙이면 실제로 적용하고, 요약에 행동 교체가 정답을 만들었는지(정답으로 바뀜/오답으로 바뀜)가 나옵니다.
+
+```sh
+uv run python play.py run shooter --provider laya-mlx --episodes 3          # 3판, policy는 기록만
+uv run python play.py run shooter --provider laya-mlx --episodes 3 --policy # policy 적용
+uv run python play.py report results/games/shooter/<기록 폴더>              # 기록 다시 요약
+```
+
+판이 끝나면 게임이 다음 시나리오로 리셋됩니다. `--episodes N`은 N판 뒤에 멈춥니다.
 
 ### 게임 타입과 모델 매핑
 
@@ -228,26 +269,26 @@ uv run python play.py matrix --types realtime         # 실시간 타입만 (tur
 ```text
 ## 실시간 · 액션/슈터 (`realtime.action`, 지연 예산 150ms)
 
-| 모델 | 일치 | 중간 지연 | 예산 안 | 오류 |
-| laya | 2/5 | 40.6ms | 예 | 0 |
-| laya-mlx | 2/5 | 22.6ms | 예 | 0 |
+| 모델 | 일치 | Score 오차 | Noul Brier | 중간 지연 | 예산 안 | 오류 |
+| laya-mlx | 11/31 | 0.81 | 0.663 | 35.4ms | 예 | 0 |
 
 - 현재 live: laya-mlx / 측정 기준 추천: laya-mlx → 설정과 같음
 ```
 
-- **일치**: 임시 기대 행동(`reference_action`)과 같은 선택을 한 수입니다. 정확도 증명이 아닙니다.
+- **일치**: 케이스 truth의 정답 행동과 같은 선택을 한 수입니다.
+- **Score 오차 / Noul Brier**: 위험도 단계와의 평균 거리, 확률 예측 오차입니다. 둘 다 0이 완벽합니다.
 - **중간 지연**: 모델마다 첫 호출(모델 로딩)을 뺀 중간값입니다.
 - **추천**: 지연 예산 안에서 오류 없이 답한 모델 중 가장 많이 맞힌 모델입니다. 동률이면 더 빠른 모델입니다. 하나도 맞히지 못한 모델은 추천하지 않습니다.
 - **판정**: `설정과 같음`, `설정 변경 검토`, `보류`(현재 live 모델을 이번에 측정하지 않음, 예: Jev 키 없이 실행), `추천 없음` 중 하나입니다.
 
-`matrix`는 설정 파일을 바꾸지 않습니다. 매핑은 결과를 보고 사람이 `config/game_types.json`에서 고칩니다. 각 비교 세트가 케이스 5개뿐이라, 매핑을 정하기 전에 실제 게임 기록(`export-cases`)이나 사람이 검토한 케이스를 더 모으세요.
+`matrix`는 설정 파일을 바꾸지 않습니다. 매핑은 결과를 보고 사람이 `config/game_types.json`에서 고칩니다. 시뮬레이션 게임의 케이스는 `python -m sims cases`로 더 늘릴 수 있습니다(`--per-scenario`, `--seed`).
 
 ### 장르 늘리기
 
 새 장르는 두 단계로 늘립니다.
 
 1. `config/game_types.json`에 타입을 추가합니다. 예: `"turn.puzzle"`에 `timing`, `label`, `latency_budget_ms`, `providers`를 적음
-2. 그 타입으로 게임을 만듭니다. 인터페이스 없이 만들면 `questions.json`과 `cases.json`만 채워 바로 비교할 수 있습니다.
+2. 그 타입으로 게임을 만듭니다. 인터페이스 없이 만들면 `questions.json`과 `cases.json`만 채워 바로 비교할 수 있습니다. 정답을 스스로 계산하는 시뮬레이션으로 만들려면 [sims/base.py](sims/base.py)의 `Sim`을 상속해 규칙을 쓰고 `sims/__init__.py`의 `SIMS`에 등록합니다.
 
 ```sh
 uv run python play.py new puzzle_sample --type turn.puzzle
@@ -282,7 +323,8 @@ uv run python play.py run mygame --interface socket     # 이번 실행만 다�
 | `play.py add-interface <게임> kbm\|socket` | 기존 게임에 연결 방법 추가 |
 | `play.py doctor <게임>` | 연결, 권한, 상태 읽기 점검. 행동은 보내지 않음 |
 | `play.py observe <게임>` | 지금 상태를 한 번 읽어 출력 |
-| `play.py run <게임>` | 플레이: 관찰 → 모델 판단 → 행동. 모델은 타입 매핑을 따름 (`--provider`로 바꿈) |
+| `play.py run <게임>` | 플레이: 관찰 → 모델 판단 → (policy) → 행동. 정답이 있으면 매 step 채점. `--provider`, `--policy`, `--episodes` |
+| `play.py report <기록 폴더>` | 기록의 질문별 채점과 policy 효과 요약 |
 | `play.py export-cases <게임> <기록 폴더>` | 플레이 기록을 비교 케이스로 변환 |
 | `play.py compare <게임> --provider all` | 게임 하나의 케이스를 여러 모델에 보내 비교 |
 | `play.py matrix` | 모든 게임을 모델별로 돌려 타입별로 정리 |
@@ -303,9 +345,9 @@ uv run python play.py run mygame --interface socket     # 이번 실행만 다�
 
 | 파일 | 내용 |
 |---|---|
-| `game.json` | `name`, `type`, `interface`(기본 인터페이스), 선택 `providers`(이 게임만 모델 매핑 바꾸기) |
-| `questions.json` | 모델에게 보여 줄 선택지와 설명 |
-| `cases.json` | 비교용 상태와 기대 행동 |
+| `game.json` | `name`, `type`, `interface`(기본 인터페이스), 선택 `providers`(이 게임만 모델 매핑 바꾸기), 선택 `policy` |
+| `questions.json` | 모델에게 그대로 보낼 질문. `action`(choice)은 필수, score·noul은 선택 |
+| `cases.json` | 비교용 `state`와 질문별 `truth` (모르는 질문은 빼거나 null) |
 | `interfaces/<이름>/interface.json` | `connector`와 연결 설정. `actions`의 이름은 `questions.json` 선택지와 같아야 함 |
 | `interfaces/<이름>/observer.py` | kbm은 필수(화면 → 상태), socket은 선택(`describe(state)`로 설명문 바꾸기) |
 
@@ -319,19 +361,21 @@ uv run python play.py run mygame --interface socket     # 이번 실행만 다�
 
 ### socket 게임 붙이기
 
-게임 빌드가 로컬 Unix 소켓에서 JSON 한 줄 요청에 답하면 됩니다. ArenaGame의 [game_ipc.py](game_ipc.py)가 그대로 예시입니다.
+게임 빌드가 로컬 Unix 소켓에서 JSON 한 줄 요청에 답하면 됩니다. [sims/service.py](sims/service.py)가 그대로 예시입니다.
 
 | 요청 | 응답 |
 |---|---|
-| `{"op": "state"}` | `{"ok", "snapshot": 상태, "description": 설명문, "revision": 상태 번호}` |
+| `{"op": "state"}` | `{"ok", "snapshot": 상태, "description": 설명문, "revision": 상태 번호}` + 선택 `"truth"`, `"done"` |
 | `{"op": "step", "action": 명령, "expected_revision": 번호}` | `{"ok", "error"?, "snapshot", "revision"}`. 번호가 다르면 거절 |
+| `{"op": "reset"}` (선택) | 다음 판을 시작하고 `state`와 같은 응답 |
 
-`launch`를 쓰면 `play.py`가 게임을 띄우면서 `--socket <경로>`를 넘깁니다. 이미 떠 있는 게임에 붙으려면 `launch` 대신 `"socket": "<소켓 경로>"`를 적으세요.
+회사 게임에 훅을 요청할 때 `truth`(게임이 아는 정답: 지금 가만히 있으면 맞는지, 위험 단계 등)도 함께 내보내 달라고 하면, 사람이 라벨을 달지 않아도 모든 판단이 채점됩니다.
+
+`launch`를 쓰면 `play.py`가 게임을 띄우면서 `--socket <경로>`를 넘깁니다. 명령의 `"{python}"`은 지금 Python으로 바뀌고, 명령은 프로젝트 폴더에서 실행됩니다. 이미 떠 있는 게임에 붙으려면 `launch` 대신 `"socket": "<소켓 경로>"`를 적으세요.
 
 ```sh
-./build_game.sh
-uv run python play.py run arena --steps 5                      # 타입 매핑대로 Jev가 플레이 (JEV_API_KEY 필요)
-uv run python play.py run arena --provider laya-mlx --steps 5  # 키 없이 로컬 모델로
+uv run python play.py run arena --steps 20                      # 타입 매핑대로 Jev가 플레이 (JEV_API_KEY 필요)
+uv run python play.py run arena --provider laya-mlx --steps 20  # 키 없이 로컬 모델로
 ```
 
 ### kbm 게임 붙이기
@@ -386,7 +430,7 @@ uv run python play.py run mygame --provider laya-mlx --frames               # �
 **실시간 게임에서 달라지는 점**: 턴제 게임은 모델 답을 기다려 주지만 실시간 게임은 그동안에도 진행됩니다. 그래서 kbm `interface.json`에서 몇 가지를 설정합니다.
 
 - **늦은 판단 버리기**: 입력 직전에 화면을 다시 봅니다. `decision_keys`에 적은 상태 값이 판단 중에 바뀌었거나, 관찰 후 `max_age_ms`가 지났으면 입력하지 않습니다(`~`).
-- **판단하는 동안 일시정지** (`pause_key`): 게임에 일시정지 키가 있으면 판단하는 동안 멈춰 턴제처럼 돌립니다. `topdown_sample`은 `escape`로 설정되어 있습니다. 쓰지 않으려면 `--no-pause`를 붙이세요.
+- **판단하는 동안 일시정지** (`pause_key`): 게임에 일시정지 키가 있으면 판단하는 동안 멈춰 턴제처럼 돌립니다. 쓰지 않으려면 `--no-pause`를 붙이세요.
 - **빠른 규칙** (`observer.py`의 `reflex`): "경고가 보이면 바로 회피"처럼 모델을 기다리면 늦는 반응을 규칙으로 처리합니다. `--reflex`로 켜고 `reflex_hz`로 초당 횟수를 정합니다.
 
 로컬 모델(Laya-MLX)은 첫 호출 이후 한 번에 약 20~40ms라 실시간에도 쓸 만합니다. Jev는 네트워크 왕복이 있어 판단 주기(`interval_ms`)를 넉넉히 잡으세요.
@@ -399,11 +443,11 @@ shadow 모델은 플레이 중 같은 장면을 함께 판단하지만, 모든 �
 
 ```sh
 uv run python play.py export-cases mygame results/games/mygame/<기록 폴더>   # → games/mygame/cases.recorded.json
-# cases.recorded.json의 reference_action에 사람이 판단한 기대 행동을 채움
+# 게임이 truth를 보냈다면 그대로 들어감. 없으면 cases.recorded.json의 truth를 사람이 채움
 uv run python play.py compare mygame --cases games/mygame/cases.recorded.json --provider all
 ```
 
-`--cases`를 빼면 `games/<id>/cases.json`을 씁니다. 결과는 `results/games/<id>/compare-<시각>.json`에 저장되고, `✓`는 기대 행동과 같다는 뜻입니다. `matrix`는 각 케이스의 `cases.json`만 읽으므로, 검토를 마친 기록 케이스를 타입별 비교에 넣으려면 `cases.json`에 옮겨 붙이세요.
+`--cases`를 빼면 `games/<id>/cases.json`을 씁니다. 결과는 `results/games/<id>/compare-<시각>.json`에 저장되고, `✓`는 정답 행동과 같다는 뜻입니다. `matrix`는 각 케이스의 `cases.json`만 읽으므로, 검토를 마친 기록 케이스를 타입별 비교에 넣으려면 `cases.json`에 옮겨 붙이세요.
 
 ### 다른 연결 방식 추가하기
 

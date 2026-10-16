@@ -1,12 +1,17 @@
 """socket connector: the game build has a test hook and serves its own state.
 
-The build must answer JSON-line requests on a Unix socket, as ArenaGame does:
+The build must answer JSON-line requests on a Unix socket, as ArenaGame and sims/ do:
   {"op": "state"}                                  -> {"ok", "snapshot", "description", "revision"}
   {"op": "step", "action", "expected_revision"}   -> {"ok", "error"?, "snapshot", "revision"}
+Optional: "truth" (the right answer per question, never shown to the model), "done"
+(the episode ended) and {"op": "reset"} to start the next episode.
+
+In launch.command, "{python}" is this Python, and the command runs in the project folder.
 """
 
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from contextlib import contextmanager
@@ -42,6 +47,9 @@ class SocketGame:
         if op == "observe":
             response = self.client.request("state")
             return {**self._observed(response), "ok": bool(response.get("ok")), "error": response.get("error")}
+        if op == "reset":
+            response = self.client.request("reset")
+            return {**self._observed(response), "ok": bool(response.get("ok")), "error": response.get("error")}
         if op == "act":
             action = kwargs.get("action")
             if action not in self.game.actions:
@@ -52,7 +60,7 @@ class SocketGame:
             return {"ok": ok, "applied": ok, "action": action, "error": response.get("error"),
                     # A changed revision means the game moved on while the model was thinking.
                     "stale": not ok and expected is not None and response.get("revision") != expected,
-                    "state": response.get("snapshot"), "before": response.get("before")}
+                    "state": response.get("snapshot"), "before": response.get("before"), "done": bool(response.get("done"))}
         if op in ("pause", "resume"):
             return {"ok": False, "error": "socket 게임은 게임이 판단을 기다리므로 일시정지가 필요 없습니다."}
         if op == "halt":
@@ -63,7 +71,7 @@ class SocketGame:
         state = response.get("snapshot") or {}
         return {"frame": response.get("revision"), "observed_at": time.time(), "window": None, "state": state,
                 "description": self.game.describe(state, response.get("description") or ""),
-                "signature": response.get("revision")}
+                "signature": response.get("revision"), "truth": response.get("truth"), "done": bool(response.get("done"))}
 
 
 @contextmanager
@@ -74,11 +82,12 @@ def connect(game, **_):
         return
     workdir = Path(tempfile.mkdtemp(prefix="game-"))
     socket_path = workdir / "game.sock"
-    command = [str(ROOT / part) if i == 0 and not Path(part).is_absolute() else part
-               for i, part in enumerate(launch["command"])]
-    if not Path(command[0]).exists():
-        raise FileNotFoundError("%s가 없습니다. %s" % (command[0], launch.get("build_hint", "게임을 먼저 빌드하세요.")))
-    process = subprocess.Popen([*command, launch.get("socket_arg", "--socket"), str(socket_path)])
+    command = [sys.executable if part == "{python}" else part for part in launch["command"]]
+    if command[0] != sys.executable:
+        command[0] = str(ROOT / command[0]) if not Path(command[0]).is_absolute() else command[0]
+        if not Path(command[0]).exists():
+            raise FileNotFoundError("%s가 없습니다. %s" % (command[0], launch.get("build_hint", "게임을 먼저 빌드하세요.")))
+    process = subprocess.Popen([*command, launch.get("socket_arg", "--socket"), str(socket_path)], cwd=ROOT)
     client = GameClient(socket_path)
     try:
         _wait_ready(client, process, launch.get("ready_timeout", 15))

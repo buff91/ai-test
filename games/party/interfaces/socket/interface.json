@@ -1,0 +1,21 @@
+{
+  "connector": "socket",
+  "launch": {
+    "command": [
+      "{python}",
+      "-m",
+      "sims",
+      "serve",
+      "party"
+    ],
+    "socket_arg": "--socket"
+  },
+  "interval_ms": 300,
+  "actions": {
+    "attack": "attack",
+    "aoe_skill": "aoe_skill",
+    "heal": "heal",
+    "guard": "guard",
+    "use_item": "use_item"
+  }
+}

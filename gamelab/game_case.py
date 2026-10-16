@@ -3,6 +3,9 @@
 games/<id>/game.json, questions.json, cases.json   what the game is and what is decided
 games/<id>/interfaces/<name>/interface.json          how to reach it ("connector": kbm or socket)
 
+questions.json is sent to the models as is. cases.json and the game itself may carry a
+"truth" per question (gamelab/grade.py), and game.json a "policy" (gamelab/policy.py).
+
 A game can have several interfaces (e.g. kbm today, socket once the build gets a test
 hook). Every connector yields a client with the same ops (info, observe, act, pause,
 resume, halt), so the runner and model comparison never depend on the interface.
@@ -14,7 +17,8 @@ import importlib.util
 import json
 from pathlib import Path
 
-from gamelab.game_types import load_types, validate_providers
+from gamelab import grade, policy
+from gamelab.game_types import PROVIDER_NAMES, load_types, validate_providers
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -83,6 +87,7 @@ class GameCase:
         self.questions = _read(self.dir / "questions.json")
         self.options = self.questions.get("action", {}).get("criteria")
         self.actions = self.config.get("actions")
+        self.policy = self.game_config.get("policy") or {}
         observer = self.interface_dir / "observer.py" if self.interface else None
         self.observer = (_load_module(observer, "game_%s_%s_observer" % (game_id, self.interface))
                          if observer and observer.exists() else None)
@@ -91,6 +96,12 @@ class GameCase:
     def _validate(self):
         if self.questions.get("action", {}).get("type") != "choice" or not isinstance(self.options, dict):
             raise ValueError("%s: questions.json에 choice 형식의 action 질문이 필요합니다." % self.id)
+        for qid, question in self.questions.items():
+            if question.get("type") not in ("choice", "score", "noul"):
+                raise ValueError("%s: questions.json의 %s 유형은 choice, score, noul 중 하나여야 합니다." % (self.id, qid))
+            if question["type"] == "score" and not 2 <= len(question.get("criteria") or []) <= 10:
+                raise ValueError("%s: score 질문 %s에는 2~10개의 단계(criteria)가 필요합니다." % (self.id, qid))
+        policy.validate(self.policy, self.questions, self.options, PROVIDER_NAMES, "%s/game.json policy" % self.id)
         if not self.interface:
             return
         where = "%s/interfaces/%s" % (self.id, self.interface)
@@ -116,7 +127,7 @@ class GameCase:
         result = self.observer.observe(frame)
         if not isinstance(result, dict) or not isinstance(result.get("state"), dict):
             raise ValueError("%s: observe()는 {'state': dict, 'description': str}을 반환해야 합니다." % self.id)
-        return {"state": result["state"], "description": result.get("description") or ""}
+        return {"state": result["state"], "description": result.get("description") or "", "truth": result.get("truth")}
 
     def describe(self, state, description=""):
         """Optional observer.describe(state) rewrites what the model sees for hook-based games."""
@@ -146,8 +157,7 @@ class GameCase:
                 raise ValueError("%s: 케이스마다 고유한 id가 필요합니다." % path)
             if not isinstance(case.get("state"), (str, dict, list)):
                 raise ValueError("%s: %s에 state가 없습니다." % (path, case["id"]))
-            if case.get("reference_action") not in (None, *self.options):
-                raise ValueError("%s: %s의 reference_action이 선택지에 없습니다." % (path, case["id"]))
+            grade.validate_truth(case.get("truth"), self.questions, "%s: %s" % (path, case["id"]))
             seen.add(case["id"])
         return data
 

@@ -1,0 +1,23 @@
+{
+  "name": "Swarm · 몰려오는 무리 (실시간 탑다운)",
+  "type": "realtime.topdown",
+  "interface": "socket",
+  "policy": {
+    "guards": [
+      {
+        "name": "포위 위험",
+        "when": "danger >= 1.5",
+        "allow": [
+          "attack_target",
+          "skill_on_target",
+          "kite_back",
+          "drink_potion"
+        ]
+      }
+    ],
+    "escalate": {
+      "when": "danger >= 1.5",
+      "to": "jev"
+    }
+  }
+}

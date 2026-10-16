@@ -1,12 +1,14 @@
 """Run every game case's cases.json through each provider and summarize per game type.
 
-The summary shows, for each type, how often each model matched reference_action and
-how fast it answered, and which model fits the type's latency budget best. It does
-not change config/game_types.json; that mapping stays a human decision.
+The summary shows, for each type, how often each model's action matched the case's
+truth, how close its Score and Noul answers were (mean error, Brier), how fast it
+answered, and which model fits the type's latency budget best. It does not change
+config/game_types.json; that mapping stays a human decision.
 """
 
 import statistics
 
+from gamelab import grade
 from gamelab.decide import for_game
 
 
@@ -20,8 +22,10 @@ def run_matrix(games, providers, key=None, log=print):
             for case in cases:
                 row = decider.decide(case["state"])
                 # The first call per runtime includes model loading, so keep it out of latency stats.
-                row.update({"game": game.id, "type": game.type, "case_id": case["id"],
-                            "reference_action": case.get("reference_action"),
+                truth = case.get("truth")
+                row.update({"game": game.id, "type": game.type, "case_id": case["id"], "truth": truth,
+                            "grade": grade.grade(row.get("answers"), truth, game.questions)
+                            if row["status"] == "ok" and truth else None,
                             "warmup": provider not in warmed})
                 warmed.add(provider)
                 rows.append(row)
@@ -44,15 +48,21 @@ def summarize(rows, types, games):
         for provider in sorted({row["provider"] for row in rows if row["type"] == type_id}):
             mine = [row for row in rows if row["type"] == type_id and row["provider"] == provider]
             ok = [row for row in mine if row["status"] == "ok"]
-            judged = [row for row in ok if row["reference_action"] is not None]
+            items = [g for row in ok for g in (row.get("grade") or {}).values() if not g.get("status")]
+            judged = [g for g in items if g["type"] == "choice"]
+            scores = [g["abs_error"] for g in items if g["type"] == "score"]
+            nouls = [g["brier"] for g in items if g["type"] == "noul"]
             latencies = [row["model_ms"] for row in ok if not row["warmup"]] or [row["model_ms"] for row in ok]
             median = statistics.median(latencies) if latencies else None
+            matches = sum(1 for g in judged if g["correct"])
             stats[provider] = {
                 "cases": len(mine),
                 "errors": len(mine) - len(ok),
                 "judged": len(judged),
-                "matches": sum(1 for row in judged if row["action"] == row["reference_action"]),
-                "match_rate": (sum(1 for row in judged if row["action"] == row["reference_action"]) / len(judged)) if judged else None,
+                "matches": matches,
+                "match_rate": matches / len(judged) if judged else None,
+                "score_mae": grade._mean(scores),
+                "noul_brier": grade._mean(nouls),
                 "median_ms": round(median, 1) if median is not None else None,
                 "within_budget": median is not None and median <= budget,
             }
@@ -76,22 +86,28 @@ def summarize(rows, types, games):
 
 def to_markdown(summary):
     lines = ["# 게임 타입별 모델 비교", "",
-             "일치율은 각 케이스의 임시 기대 행동(`reference_action`)과 같은 비율이며 정확도 증명이 아닙니다. "
+             "일치는 케이스 truth의 정답 행동과 같은 비율입니다. Score 오차는 위험도 단계와의 평균 거리(0이 완벽), "
+             "Noul Brier는 확률 예측 오차(0이 완벽, 항상 0.5면 0.25)입니다. "
              "지연은 첫 호출(모델 로딩)을 뺀 중간값입니다.", ""]
     for type_id, item in summary.items():
         lines += ["## %s (`%s`, 지연 예산 %dms)" % (item["label"], type_id, item["budget_ms"]), "",
-                  "| 모델 | 일치 | 중간 지연 | 예산 안 | 오류 |", "|---|---|---|---|---|"]
+                  "| 모델 | 일치 | Score 오차 | Noul Brier | 중간 지연 | 예산 안 | 오류 |", "|---|---|---|---|---|---|---|"]
         for provider, s in item["providers"].items():
             rate = "%d/%d" % (s["matches"], s["judged"]) if s["judged"] else "-"
-            lines.append("| %s | %s | %s | %s | %d |" % (
-                provider, rate, "%.1fms" % s["median_ms"] if s["median_ms"] is not None else "-",
-                "예" if s["within_budget"] else "아니요", s["errors"]))
+            lines.append("| %s | %s | %s | %s | %s | %s | %d |" % (
+                provider, rate, _num(s.get("score_mae"), "%.2f"), _num(s.get("noul_brier"), "%.3f"),
+                _num(s["median_ms"], "%.1fms"), "예" if s["within_budget"] else "아니요", s["errors"]))
         lines += ["", "- 현재 live: %s / 측정 기준 추천: %s → **%s**" % (
             ", ".join(item["configured_live"]) or "-", item["suggested_live"] or "-", item["verdict"]), ""]
     return "\n".join(lines)
 
 
+def _num(value, fmt):
+    return fmt % value if value is not None else "-"
+
+
 def _mark(row):
     if row["status"] != "ok":
         return "!"
-    return "✓" if row["action"] == row["reference_action"] else "·"
+    correct = ((row.get("grade") or {}).get("action") or {}).get("correct")
+    return "✓" if correct else "·"

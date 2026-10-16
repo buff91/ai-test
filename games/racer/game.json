@@ -1,0 +1,22 @@
+{
+  "name": "Racer · 3차선 레이스 (실시간 레이싱)",
+  "type": "realtime.racing",
+  "interface": "socket",
+  "policy": {
+    "guards": [
+      {
+        "name": "충돌 직전",
+        "when": "crash_ahead >= 0.6",
+        "allow": [
+          "brake",
+          "steer_left",
+          "steer_right"
+        ]
+      }
+    ],
+    "escalate": {
+      "when": "danger >= 1.5",
+      "to": "jev"
+    }
+  }
+}

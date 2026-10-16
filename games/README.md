@@ -4,14 +4,14 @@
 
 ```text
 games/<게임>/
-  game.json                       이름, 타입, 기본 인터페이스
-  questions.json                  모델에게 보여 줄 선택지
-  cases.json                      비교용 상태와 기대 행동
+  game.json                       이름, 타입, 기본 인터페이스, policy
+  questions.json                  모델에게 보낼 Choice·Score·Noul 질문
+  cases.json                      비교용 상태와 질문별 정답(truth)
   interfaces/<이름>/interface.json  연결 방법 (connector: kbm 또는 socket)
   interfaces/<이름>/observer.py     kbm은 필수, socket은 선택
 ```
 
-인터페이스는 여러 개 둘 수 있고, 하나도 없으면 비교(`compare`, `matrix`) 전용입니다.
+지금 있는 여섯 게임(`arena`, `cards`, `party`, `shooter`, `swarm`, `racer`)은 [sims/](../sims/)의 시뮬레이션이고, 매 상태의 정답을 게임이 직접 계산해 보냅니다.
 
 ```sh
 uv run python play.py new mygame --type realtime.action    # 비교 전용으로 시작
@@ -23,44 +23,70 @@ uv run python play.py run mygame --interface socket        # 인터페이스 골
 ## game.json
 
 ```json
-{"name": "ArenaGame (턴제 예제 게임)", "type": "turn.tactics", "interface": "socket"}
+{"name": "Arena · 포탑 돌파 (턴제 전술)", "type": "turn.tactics", "interface": "socket",
+ "policy": {"guards": [{"name": "피격 직전", "when": "incoming_attack >= 0.7", "allow": ["dodge", "retreat", "attack"]}]}}
 ```
 
 - `name`: 목록에 보일 이름
 - `type` (필수): `config/game_types.json`의 타입. 어떤 모델이 플레이하고(live) 어떤 모델이 옆에서 비교만 할지(shadow) 정함. `uv run python play.py types`로 목록 확인
 - `interface`: `--interface`를 안 줄 때 쓸 인터페이스. 인터페이스가 하나뿐이면 생략 가능
 - `providers` (선택): 이 게임만 타입의 모델 매핑과 다르게 할 때. 적은 값만 덮어씀
+- `policy` (선택): Score·Noul 답으로 행동을 제어하는 규칙. 기본은 기록만 하고 `run --policy`일 때 적용
 
 ```json
 "providers": {"live": "laya-mlx", "shadow": ["jev"], "models": {"laya-mlx": "english"}}
 ```
 
-## questions.json, cases.json
+### policy
 
-`questions.json`의 `action` 선택지가 이 게임에서 고를 수 있는 행동입니다. 모든 인터페이스의 `actions`는 이 이름들과 정확히 같아야 합니다. `cases.json`은 `id`, `state`(상태 설명), `reference_action`(임시 기대 행동) 목록입니다.
+| 키 | 형식 | 하는 일 |
+|---|---|---|
+| `guards[].when` | `"질문id >= 숫자"` (`>=`, `<=`, `>`, `<`) | score나 noul 질문의 답에 대한 조건 |
+| `guards[].allow` | 선택지 목록 | 조건이 맞을 때 허용할 행동. 고른 행동이 없으면 이 중 모델이 가장 높게 본 것으로 바꿈 |
+| `guards[].name` | 문자열 (선택) | 로그와 요약에 보일 이름 |
+| `escalate.when` / `escalate.to` | 조건 / `jev`·`laya`·`laya-mlx` | 조건이 맞으면 그 모델에게 다시 물어 답을 바꿈 |
+
+조건이 가리키는 질문이 이 게임에 없거나, `allow`에 없는 행동이 있으면 게임을 불러올 때 에러가 납니다.
+
+## questions.json
+
+모델(Jev, Laya, Laya-MLX)에게 **그대로** 보냅니다. 여기에는 질문 외의 키를 넣지 마세요.
+
+- `action` (필수, `choice`): 이 게임에서 고를 수 있는 행동. 모든 인터페이스의 `actions`는 이 이름들과 정확히 같아야 함
+- `score` 질문 (선택): 2~10개의 순서 있는 단계(`criteria`)
+- `noul` 질문 (선택): 참/거짓 확률
+
+## cases.json
+
+```json
+[{"id": "telegraph-00", "state": "Turn 1. Player: ...", "truth": {"action": ["dodge"], "danger": 2, "incoming_attack": true}}]
+```
+
+- `truth`의 키는 `questions.json`의 질문 id입니다. choice는 맞는 행동 목록, score는 단계 번호, noul은 true/false 또는 0~1 확률입니다.
+- 모르는 질문은 빼거나 `null`로 두면 채점하지 않습니다. `truth`가 없는 케이스는 아무것도 채점하지 않습니다.
+- 시뮬레이션 게임은 `uv run python -m sims cases <게임> --output games/<게임>/cases.json`으로 다시 만듭니다.
 
 ## socket 인터페이스
 
 ```json
 {
   "connector": "socket",
-  "launch": {"command": ["dist/ArenaGame/ArenaGame"], "socket_arg": "--socket"},
+  "launch": {"command": ["{python}", "-m", "sims", "serve", "arena"], "socket_arg": "--socket"},
   "interval_ms": 300,
   "actions": {"attack": "attack", "wait": "wait"}
 }
 ```
 
-- `launch.command`: 게임 실행 명령. 상대 경로는 프로젝트 폴더 기준. `play.py`가 `socket_arg`와 소켓 경로를 붙여 실행함
+- `launch.command`: 게임 실행 명령. `"{python}"`은 지금 Python. 그 밖의 첫 항목이 상대 경로면 프로젝트 폴더 기준. 프로젝트 폴더에서 실행하고 `socket_arg`와 소켓 경로를 붙임
 - 이미 떠 있는 게임에 붙으려면 `launch` 대신 `"socket": "/소켓/경로"`
 - `actions`의 값: 게임에 `step`으로 보낼 명령 이름. 선택지 이름과 게임 명령 이름이 다르면 여기서 연결
 - `observer.py`의 `describe(state)`: 게임이 주는 설명문 대신 모델에게 보낼 문장을 만들고 싶을 때만
 
-게임이 지켜야 할 요청 형식은 `gamelab/socket_game.py` 맨 위 주석과 프로젝트 README의 "socket 게임 붙이기"에 있습니다.
+게임이 지켜야 할 요청 형식(`truth`, `done`, `reset` 포함)은 `gamelab/socket_game.py` 맨 위 주석과 프로젝트 README의 "socket 게임 붙이기"에 있습니다.
 
 ## kbm 인터페이스
 
-`connector`는 `"kbm"`입니다.
-
+`connector`는 `"kbm"`입니다. 예시는 [tests/fixtures/games/kbm_demo](../tests/fixtures/games/kbm_demo)에 있습니다.
 
 - `window.owner`: 활동 상태 보기에 보이는 앱 이름. `title_contains`로 창 제목을 좁힐 수 있음
 - `max_age_ms`: 관찰 후 이 시간이 지나면 판단을 버림
@@ -84,7 +110,7 @@ uv run python play.py run mygame --interface socket        # 인터페이스 골
 
 `interfaces/kbm/observer.py`:
 
-- `observe(frame)` (필수): 화면을 `{"state": {...}, "description": "..."}`로 바꿈. `frame.fill_ratio`, `frame.ratio`, `frame.find_color`, `frame.mean_rgb`를 쓸 수 있음 (`kbm/vision.py`)
+- `observe(frame)` (필수): 화면을 `{"state": {...}, "description": "..."}`로 바꿈. 화면에서 확실히 알 수 있는 정답이 있으면 `"truth": {...}`도 넣을 수 있음. `frame.fill_ratio`, `frame.ratio`, `frame.find_color`, `frame.mean_rgb`를 쓸 수 있음 (`kbm/vision.py`)
 - `reflex(state)` (선택): 모델 없이 바로 반응할 행동 이름 또는 `None`
 
 observer.py는 빌드된 KbmAgent 안에서 실행되므로 표준 라이브러리, Pillow, `kbm.vision`만 import하세요.

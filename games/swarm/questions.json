@@ -1,0 +1,26 @@
+{
+  "action": {
+    "type": "choice",
+    "instructions": "Which single action should the player character take next in this top-down game?",
+    "criteria": {
+      "attack_target": "Basic-attack the nearest group when it is within distance 1.",
+      "skill_on_target": "Use the ready skill when several groups are within its range.",
+      "kite_back": "Back off to push every group away when too many are close.",
+      "drink_potion": "Drink a potion when health is low and a potion is left.",
+      "hold": "Do nothing when no action is useful yet."
+    }
+  },
+  "danger": {
+    "type": "score",
+    "instructions": "How much immediate danger is the player in, before taking the next action? Assess the current state, not the result of the action you would choose.",
+    "criteria": [
+      "Safe: holding still for the next two turns costs no health.",
+      "Threatened: holding still costs health next turn, but not this turn.",
+      "Critical: holding still costs health this turn, or the player is about to be defeated."
+    ]
+  },
+  "incoming_attack": {
+    "type": "noul",
+    "instructions": "If the player chooses hold this turn, will an enemy group bite the player? Answer based only on the supplied state."
+  }
+}

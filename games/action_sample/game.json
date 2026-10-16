@@ -1,5 +1,0 @@
-{
-  "name": "예시 · 키보드 중심 액션 게임 (WASD·스페이스·좌클릭)",
-  "type": "realtime.action",
-  "interface": "kbm"
-}

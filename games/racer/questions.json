@@ -1,0 +1,27 @@
+{
+  "action": {
+    "type": "choice",
+    "instructions": "In this racing game, which single input should the driver apply right now?",
+    "criteria": {
+      "accelerate": "Accelerate when nothing ahead requires a lower speed.",
+      "brake": "Brake before a corner that must be taken slower than the current speed.",
+      "steer_left": "Steer left to avoid an obstacle in the current lane.",
+      "steer_right": "Steer right to avoid an obstacle in the current lane.",
+      "boost": "Use boost on a long clear stretch when a charge is available.",
+      "keep": "Keep speed and lane when they are already right."
+    }
+  },
+  "danger": {
+    "type": "score",
+    "instructions": "If the driver keeps the current speed and lane, how soon does the car crash?",
+    "criteria": [
+      "Safe: no crash in the next two moves.",
+      "Threatened: a crash on the second move.",
+      "Critical: a crash on this move."
+    ]
+  },
+  "crash_ahead": {
+    "type": "noul",
+    "instructions": "If the driver chooses keep, will the car crash on this move? Answer based only on the supplied state."
+  }
+}

@@ -11,7 +11,6 @@ from unittest.mock import patch
 from PIL import Image, ImageDraw
 
 from game_core import ACTIONS
-from game_ipc import GameService
 from gamelab.decide import Decider
 from gamelab.game_case import GAMES, GameCase, list_games
 from gamelab.game_types import load_types, validate_providers
@@ -22,8 +21,11 @@ from kbm.agent import AgentService
 from kbm.macos import DryRunInput
 from kbm.steps import validate_step
 from kbm.vision import Frame
+from sims.arena import ArenaSim
+from sims.service import SimService
 
 
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "games"
 WINDOW = {"id": 1, "pid": 42, "x": 100.0, "y": 50.0, "width": 800.0, "height": 600.0}
 
 
@@ -65,7 +67,7 @@ class FakePlatform:
 class GameCaseTests(unittest.TestCase):
     def test_every_game_and_every_interface_loads(self):
         self.assertEqual(GameCase("arena").connector, "socket")
-        self.assertEqual(GameCase("action_sample").connector, "kbm")
+        self.assertEqual(GameCase("kbm_demo", FIXTURES).connector, "kbm")
         for game_id in list_games():
             game = GameCase(game_id)
             self.assertTrue(game.cases())
@@ -77,7 +79,7 @@ class GameCaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as games_dir:
             shutil.copytree(GAMES / "arena", Path(games_dir) / "arena")
             kbm = Path(games_dir) / "arena" / "interfaces" / "kbm"
-            shutil.copytree(GAMES / "action_sample" / "interfaces" / "kbm", kbm)
+            shutil.copytree(FIXTURES / "kbm_demo" / "interfaces" / "kbm", kbm)
             self.assertEqual(GameCase("arena", games_dir).connector, "socket")  # game.json default
             game = GameCase("arena", games_dir, interface="kbm")
             self.assertEqual(game.connector, "kbm")
@@ -102,7 +104,7 @@ class GameCaseTests(unittest.TestCase):
                 validate_step(step, "test")
 
     def test_observer_reads_case1_hud(self):
-        observed = GameCase("action_sample").observe(Frame(action_screen(hp=0.2, warning=True)))
+        observed = GameCase("kbm_demo", FIXTURES).observe(Frame(action_screen(hp=0.2, warning=True)))
         state = observed["state"]
         self.assertEqual(state["hp_band"], "critical")
         self.assertTrue(state["warning"])
@@ -115,7 +117,7 @@ class AgentTests(unittest.TestCase):
         self.screen = {"image": action_screen()}
         self.platform = FakePlatform(lambda: self.screen["image"])
         self.backend = DryRunInput()
-        self.agent = AgentService(GameCase("action_sample"), self.platform, self.backend)
+        self.agent = AgentService(GameCase("kbm_demo", FIXTURES), self.platform, self.backend)
 
     def test_click_lands_on_observed_enemy_in_screen_points(self):
         result = self.agent.handle({"op": "act", "action": "attack"})
@@ -165,10 +167,10 @@ class AgentTests(unittest.TestCase):
 
 
 class LocalSocket:
-    """Calls ArenaGame's own GameService in-process instead of over a Unix socket."""
+    """Calls a sim's SimService in-process instead of over a Unix socket."""
 
-    def __init__(self):
-        self.service = GameService()
+    def __init__(self, sim=ArenaSim, scenario=None):
+        self.service = SimService(sim, scenario)
 
     def request(self, op, **kwargs):
         return self.service.handle({"op": op, **kwargs})
@@ -233,16 +235,23 @@ class GameTypeTests(unittest.TestCase):
             validate_providers({"live": "jev", "shadow": ["jev"]}, "test")
 
     def test_game_without_interface_is_compare_only(self):
-        game = GameCase("card_sample")
-        self.assertIsNone(game.interface)
-        self.assertTrue(game.cases())
-        with self.assertRaises(RuntimeError):
-            with game.connect():
-                pass
+        with tempfile.TemporaryDirectory() as games_dir:
+            shutil.copytree(GAMES / "cards", Path(games_dir) / "cards", ignore=shutil.ignore_patterns("interfaces"))
+            path = Path(games_dir) / "cards" / "game.json"
+            config = json.loads(path.read_text(encoding="utf-8"))
+            del config["interface"]
+            path.write_text(json.dumps(config), encoding="utf-8")
+            game = GameCase("cards", games_dir)
+            self.assertIsNone(game.interface)
+            self.assertTrue(game.cases())
+            with self.assertRaises(RuntimeError):
+                with game.connect():
+                    pass
 
 
 def matrix_row(game_type, provider, action, reference, ms, warmup=False, status="ok"):
-    return {"type": game_type, "provider": provider, "action": action, "reference_action": reference,
+    graded = {"action": {"type": "choice", "answer": action, "truth": [reference], "correct": action == reference}}
+    return {"type": game_type, "provider": provider, "action": action, "grade": graded if reference else None,
             "model_ms": ms, "warmup": warmup, "status": status}
 
 
@@ -280,12 +289,16 @@ class MatrixTests(unittest.TestCase):
 
 
 class FakeDecider:
-    def __init__(self, provider, action, delay=0):
+    def __init__(self, provider, action, delay=0, answers=None):
         self.provider, self.action, self.delay = provider, action, delay
+        self.answers = {"action": {"type": "choice", "choice": action, "probabilities": {action: 1.0}}, **(answers or {})}
+        self.seen = []
 
     def decide(self, state):
+        self.seen.append(state)
         time.sleep(self.delay)
-        return {"status": "ok", "provider": self.provider, "action": self.action, "model_ms": self.delay * 1000}
+        return {"status": "ok", "provider": self.provider, "action": self.action, "model_ms": self.delay * 1000,
+                "answers": self.answers, "probabilities": {self.action: 1.0}}
 
 
 class ShadowTests(unittest.TestCase):
@@ -309,7 +322,7 @@ class ShadowTests(unittest.TestCase):
 
 class DeciderTests(unittest.TestCase):
     def test_jev_receives_the_game_cases_own_questions(self):
-        game = GameCase("topdown_sample")
+        game = GameCase("swarm")
         answer = {"answers": {"action": {"type": "choice", "choice": "kite_back", "probabilities": {"kite_back": 0.7}},
                               "danger": {"type": "score", "score": 1.8}}}
         with patch("compare.urllib.request.urlopen") as send:
