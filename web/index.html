@@ -12,28 +12,102 @@
   <div class="app-shell">
     <header class="masthead">
       <div class="brand"><span class="brand-mark">◆</span><div><div class="eyebrow">LOCAL GAME TEST</div><h1>Decision Lab</h1></div></div>
-      <div class="connection"><span class="pulse"></span><span id="connection-text">게임 연결 중</span></div>
+      <div class="connection"><span class="pulse off"></span><span id="connection-text">연결 안 됨</span></div>
     </header>
 
     <main>
-      <section class="control-section">
-        <div class="section-heading"><div><span class="section-index">01 / MODEL CONTROL</span><h2>모델 실행</h2></div><span class="section-note">선택한 모델의 행동만 게임에 적용</span></div>
+      <section>
+        <div class="section-heading"><div><span class="section-index">01 / GAME</span><h2>게임 연결</h2></div><span class="section-note">실행 방법은 games/&lt;게임&gt;/interfaces/&lt;이름&gt;/interface.json에서 옵니다</span></div>
         <div class="control-panel">
-          <div class="provider-row"><div class="field-label">실행 모델</div><div class="segmented" id="provider-buttons"><button class="selected" data-provider="jev">Jev <span>API</span></button><button data-provider="laya">Laya <span>LOCAL</span></button><button data-provider="laya-mlx">Laya MLX <span>GPU</span></button></div><label class="compare-toggle"><input id="compare" type="checkbox"><span>MLX 함께 분석</span></label></div>
-          <div class="settings-row"><label class="key-field"><span>Jev API 키</span><input id="api-key" type="password" autocomplete="off" placeholder="이 창의 메모리에만 입력"><small id="key-status">키가 설정되지 않았습니다</small></label><label class="scenario-field"><span>시작 상황</span><select id="scenario"></select></label></div>
-          <div class="action-row"><button id="run" class="button-primary">▶ &nbsp; 모델 한 턴 실행</button><button id="auto" class="button-secondary">자동 플레이</button><button id="analyze" class="button-secondary">분석만 보기</button><button id="reset" class="button-ghost">↻ &nbsp; 새 게임</button><a id="export" class="export-link" href="#">기록 내려받기 ↗</a></div>
-          <div class="status-row"><span class="status-light"></span><span id="status-message">게임 실행 파일을 기다리는 중입니다.</span><span class="shortcut">ESC 자동 플레이 중지</span></div>
-          <div class="manual-bar"><span class="manual-label">직접 조작</span><div id="manual-actions" class="manual-actions"></div><span class="manual-hint">게임 창에서도 조작할 수 있습니다</span></div>
+          <div class="settings-row first">
+            <label><span>게임</span><select id="game"></select></label>
+            <label><span>인터페이스</span><select id="interface"></select></label>
+            <span id="game-meta" class="meta"></span>
+          </div>
+          <div class="run-box">
+            <div class="field-label">실행 방법</div>
+            <div id="run-how" class="run-how"></div>
+            <div id="run-manual" class="run-manual" hidden></div>
+          </div>
+          <div id="kbm-options" class="settings-row" hidden>
+            <label class="check"><input id="dry-run" type="checkbox" checked><span>DRY-RUN (입력을 보내지 않고 기록만)</span></label>
+            <label><span>KbmAgent</span><select id="agent"><option value="app">빌드한 KbmAgent.app</option><option value="dev">현재 Python (개발용)</option></select></label>
+          </div>
+          <div class="action-row">
+            <button id="connect" class="button-primary">연결</button>
+            <button id="disconnect" class="button-ghost">연결 끊기</button>
+            <span id="permissions" class="meta"></span>
+          </div>
+          <div class="health-grid">
+            <div class="health-card" id="card-process"><small>게임 프로세스</small><strong>—</strong><div class="health-detail"></div></div>
+            <div class="health-card" id="card-link"><small>응답</small><strong>—</strong><div class="health-detail"></div></div>
+            <div class="health-card wide" id="card-build"><small>실행 중인 빌드</small><strong>—</strong><div class="health-detail"></div></div>
+          </div>
         </div>
       </section>
 
-      <section class="analytics-section">
-        <div class="section-heading"><div><span class="section-index">02 / DECISION TRACE</span><h2>판단 기록</h2></div><span class="section-note">최근 판단이 위에 표시됩니다</span></div>
-        <div class="stats-grid"><div class="stat"><small>GAME TURN</small><strong id="stat-turn">01</strong></div><div class="stat"><small>MODEL CALLS</small><strong id="stat-calls">0</strong></div><div class="stat"><small>LAST ACTION</small><strong id="stat-action">—</strong></div><div class="stat"><small>LAST LATENCY</small><strong id="stat-latency">—</strong></div></div>
-        <div class="analysis-grid"><div class="decision-column"><div class="column-title">DECISIONS <span id="decision-count">0</span></div><div id="decisions" class="decision-list"><div class="empty">모델을 실행하면 선택지별 판단이 이곳에 쌓입니다.</div></div></div><aside class="side-column"><div class="column-title">GAME STATE</div><div id="state-text" class="state-box">게임 상태를 읽는 중입니다.</div><div class="column-title event-title">EVENTS</div><div id="events" class="events"></div></aside></div>
+      <section>
+        <div class="section-heading"><div><span class="section-index">02 / MODEL CONTROL</span><h2>모델 실행</h2></div><span class="section-note">live 모델의 행동만 게임에 적용하고, shadow는 같은 장면을 판단해 기록만 합니다</span></div>
+        <div class="control-panel">
+          <div class="provider-row">
+            <div class="field-label">LIVE</div>
+            <div class="segmented" id="provider-buttons"></div>
+            <div class="field-label">SHADOW</div>
+            <div id="shadow-boxes" class="shadow-boxes"></div>
+            <label id="policy-field" class="check policy" hidden><input id="policy" type="checkbox"><span>policy 적용</span></label>
+          </div>
+          <div class="settings-row">
+            <label class="key-field"><span>Jev API 키</span><input id="api-key" type="password" autocomplete="off" placeholder="이 프로세스 메모리에만 보관"><small id="key-status">키가 설정되지 않았습니다</small></label>
+            <label id="scenario-field" class="scenario-field" hidden><span>시작 상황</span><select id="scenario"></select></label>
+          </div>
+          <div class="action-row">
+            <button id="run" class="button-primary">▶ &nbsp; 한 턴 실행</button>
+            <button id="auto" class="button-secondary">자동 플레이</button>
+            <button id="analyze" class="button-secondary">분석만 보기</button>
+            <button id="reset" class="button-ghost">↻ &nbsp; 새 판</button>
+            <a id="export" class="export-link" href="#">기록 내려받기 ↗</a>
+          </div>
+          <div class="status-row"><span class="status-light off"></span><span id="status-message">게임을 고르고 연결하세요.</span><span class="shortcut">ESC 자동 플레이 중지</span></div>
+          <div class="manual-bar"><span class="manual-label">직접 조작</span><div id="manual-actions" class="manual-actions"></div></div>
+          <div id="kbm-warning" class="run-manual kbm-warning" hidden></div>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-heading"><div><span class="section-index">03 / LIVE</span><h2>게임과 모델</h2></div><span class="section-note">지금 게임 상태와, 모델에 무엇을 보내고 무엇을 받았는지</span></div>
+        <div class="live-grid">
+          <div class="live-game">
+            <div class="column-title">GAME VIEW <span id="view-kind"></span></div>
+            <div id="frame-box" class="frame-box" hidden><img id="frame" alt="캡처한 게임 화면"><small id="frame-note"></small></div>
+            <div id="game-view" class="game-view"><div class="empty">연결하면 게임 상태가 표시됩니다.</div></div>
+            <details class="state-details"><summary>모델에게 보내는 설명문</summary><div id="state-text" class="state-box">—</div></details>
+            <div class="column-title event-title">TRUTH <span>게임이 계산한 정답 · 모델에게 보내지 않음</span></div><div id="truth" class="state-box">—</div>
+          </div>
+          <div class="live-model">
+            <div class="column-title">PIPELINE</div>
+            <div id="pipeline" class="pipeline"></div>
+            <div class="column-title event-title">MODEL CALLS <span>최근 호출이 위에 · 펼치면 요청과 응답</span></div>
+            <div id="calls" class="calls"><div class="empty">모델을 실행하면 호출이 이곳에 표시됩니다.</div></div>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div class="section-heading"><div><span class="section-index">04 / DECISION TRACE</span><h2>판단 기록</h2></div><span id="session-note" class="section-note">최근 판단이 위에 표시됩니다</span></div>
+        <div class="stats-grid">
+          <div class="stat"><small>STEPS</small><strong id="stat-steps">0</strong></div>
+          <div class="stat"><small>LAST ACTION</small><strong id="stat-action">—</strong></div>
+          <div class="stat"><small id="stat-latency-label">LAST LATENCY</small><strong id="stat-latency">—</strong></div>
+          <div class="stat"><small>LIVE ACTION ACCURACY</small><strong id="stat-accuracy">—</strong></div>
+        </div>
+        <div id="summary" class="summary" hidden></div>
+        <div class="analysis-grid">
+          <div class="decision-column"><div class="column-title">DECISIONS <span id="decision-count">0</span></div><div id="decisions" class="decision-list"><div class="empty">모델을 실행하면 질문별 판단과 정답이 이곳에 쌓입니다.</div></div></div>
+          <aside class="side-column"><div class="column-title">EVENTS</div><div id="events" class="events"></div></aside>
+        </div>
       </section>
     </main>
-    <footer>Decision Lab <span>·</span> 게임은 독립 프로세스로 실행됩니다. WebView에는 키가 저장되지 않습니다.</footer>
+    <footer>Decision Lab <span>·</span> 실습·교육용 프로젝트 <span>·</span> 게임은 독립 프로세스로 실행됩니다. API 키는 저장하지 않고, 화면에도 표시하지 않습니다.</footer>
   </div>
 </body>
 </html>

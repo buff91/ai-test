@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from game_ipc import GameClient
+from gamelab import build_info
 from kbm.keys import KEYCODES
 from kbm.steps import validate_step
 
@@ -33,6 +34,13 @@ def validate(game):
         raise ValueError("%s: kbm 게임은 observer.py에 observe(frame) 함수가 필요합니다." % game.id)
 
 
+def how_to_run(game):
+    """kbm never starts the game: the window must already be open."""
+    window = game.config.get("window") or {}
+    return {"mode": "window", "owner": window.get("owner"), "title_contains": window.get("title_contains") or "",
+            "agent_build": build_info.file_info(APP)}
+
+
 @contextmanager
 def connect(game, agent="app", dry_run=False, reflex=False, log_path=None, **_):
     """Start KbmAgent (built .app, or this Python for development) and yield a client."""
@@ -52,7 +60,7 @@ def connect(game, agent="app", dry_run=False, reflex=False, log_path=None, **_):
         process = subprocess.Popen(["open", "-n", "-W", str(APP), "--args", *args])
     else:
         process = subprocess.Popen([sys.executable, str(ROOT / "kbm_agent.py"), *args])
-    client = GameClient(socket_path, timeout=10)
+    client = AgentClient(socket_path, process, agent, timeout=10)
     log_file = Path(log_path or workdir / "agent.log")
     try:
         _wait_ready(client, process, log_file)
@@ -67,6 +75,28 @@ def connect(game, agent="app", dry_run=False, reflex=False, log_path=None, **_):
         except subprocess.TimeoutExpired:
             process.terminate()
         shutil.rmtree(workdir, ignore_errors=True)
+
+
+class AgentClient(GameClient):
+    """KbmAgent's socket, plus whether the agent process is alive and which agent build it is."""
+
+    def __init__(self, path, process, agent, timeout=10):
+        super().__init__(path, timeout=timeout)
+        self.process = process
+        self.started_at = time.time()
+        self.runtime = {"mode": "window", "agent": agent, "pid": process.pid,
+                        "agent_build": build_info.file_info(APP) if agent == "app" else
+                        {"path": "kbm_agent.py", "python": sys.executable}}
+
+    def health(self):
+        code = self.process.poll()
+        return {"pid": self.process.pid, "alive": code is None, "exit_code": code, "started_at": self.started_at}
+
+    def request(self, op, **kwargs):
+        response = super().request(op, **kwargs)
+        if op == "info" and response.get("ok"):
+            response["runtime"] = self.runtime
+        return response
 
 
 def _wait_ready(client, process, log_file, timeout=15):

@@ -1,0 +1,19 @@
+{
+  "connector": "kbm",
+  "manual": "dist/ArenaGame/ArenaGame를 실행해 게임 창을 띄운 뒤 연결하세요(./build_game.sh로 먼저 빌드). 실제 입력을 보낼 때는 게임 창이 맨 앞에 있어야 합니다.",
+  "window": {"owner": "ArenaGame"},
+  "interval_ms": 900,
+  "max_age_ms": 10000,
+  "max_action_ms": 500,
+  "decision_keys": ["player_tile", "turret_tile", "turret_alive", "charging"],
+  "pause_key": null,
+  "reflex_hz": 0,
+  "actions": {
+    "attack": [{"tap": "a"}],
+    "dodge": [{"tap": "space"}],
+    "reload": [{"tap": "r"}],
+    "retreat": [{"tap": "left"}],
+    "advance": [{"tap": "right"}],
+    "wait": [{"tap": "w"}]
+  }
+}

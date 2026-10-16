@@ -1,5 +1,7 @@
 # Jev × Laya × Laya-MLX 게임 실험
 
+> **실습·교육용 프로젝트입니다.** AI 모델이 게임 상황을 어떻게 판단하는지 비교하고, 게임 테스트 자동화의 구조(상태 관찰 → 판단 → 행동, 정답 채점)를 배우기 위해 만들었습니다. 실서비스나 상용 제품이 아니며, 측정한 정확도·지연 시간은 이 저장소의 작은 예제에서 얻은 값이라 모델의 일반적인 성능을 뜻하지 않습니다. 포함된 게임은 모두 직접 만든 시뮬레이션과 예제 빌드입니다. kbm(화면 캡처 + 키보드·마우스) 기능을 다른 회사의 게임에 쓰면 이용약관이나 부정행위 방지 정책에 어긋날 수 있으니, 직접 만들었거나 테스트 허가를 받은 게임에만 쓰세요.
+
 같은 게임 상태와 행동 선택지를 [Jev](https://docs.typesafe.ai/introduction), [Laya](https://github.com/NandhaKishorM/laya), [Laya-MLX](https://github.com/mizorewww/laya-mlx)에 보내 결과를 비교하는 독립 프로젝트입니다. 기본 예제는 플레이어의 다음 행동을 `attack`, `dodge`, `reload`, `retreat`, `advance`, `wait` 중에서 고릅니다.
 
 여러 게임을 다루려면 [`games/`](#게임-타입별-모델-매핑과-인터페이스)에 게임마다 폴더를 하나씩 만듭니다. 폴더 이름이 게임 이름입니다.
@@ -15,23 +17,30 @@
 | `kbm` | 훅이 없는 남의 빌드라 화면과 입력 장치만 쓸 수 있을 때 | 게임 창을 캡처해 화면을 해석 | 실제 키보드·마우스 입력을 보냄 |
 | (없음) | 실제 게임 없이 상태 예시로 모델만 비교할 때 | `cases.json`의 상태 설명 | 없음 (비교 전용) |
 
-아래 [게임 실행 파일 + 로컬 WebView](#게임-실행-파일--로컬-webview)는 ArenaGame 전용 대시보드입니다.
+아래 [로컬 WebView 콘솔](#로컬-webview-콘솔)에서 `games/`의 모든 게임을 골라 연결하고 조작할 수 있습니다.
 
-## 게임 실행 파일 + 로컬 WebView
-
-게임은 독립된 macOS 실행 파일 `dist/ArenaGame/ArenaGame`으로 빌드합니다. 로컬 WebView는 그 실행 파일을 별도 프로세스로 열어 게임 상태를 읽고 행동 명령을 보냅니다. 게임 화면은 별도 게임 창에만 표시되고, WebView에는 모델 실행 패널과 매 턴의 모델 판단·선택지별 확률이 쌓입니다.
+## 로컬 WebView 콘솔
 
 ```sh
 uv sync
-./build_game.sh
-uv run python web_console.py
+uv run python web_console.py                               # 게임을 화면에서 고름
+uv run python web_console.py --game arena --interface app  # 시작하자마자 연결
 ```
 
-로컬 대시보드와 게임 창이 자동으로 열립니다. 브라우저가 열리지 않으면 터미널에 출력된 `http://127.0.0.1:포트/` 주소를 여세요. WebView에서 TypeSafe Jev API 키를 입력하고 **모델 한 턴 실행** 또는 **자동 플레이**를 누르세요. Jev의 선택이 로컬 소켓을 통해 게임 실행 파일로 전달되어 플레이어 행동으로 적용됩니다. 키는 모델 실행 프로세스의 메모리에만 두고 게임 실행 파일이나 기록 파일에는 전달하지 않습니다. `Esc`로 자동 플레이를 멈춥니다.
+브라우저에 대시보드가 열립니다. 열리지 않으면 터미널에 출력된 `http://127.0.0.1:포트/` 주소를 여세요. 대시보드는 로컬 컴퓨터의 `127.0.0.1`에만 열리며 외부 사이트에 게시되지 않습니다.
 
-**MLX 함께 분석**을 켜면 같은 게임 상태에서 로컬 모델의 판단도 표시됩니다. 실제 게임 행동은 선택한 주 모델의 판단만 적용합니다. WebView나 게임 창에서 직접 조작하거나 시작 상황을 바꿀 수 있습니다. 모델이 판단하는 동안 게임 상태가 바뀌면 이전 상태를 바탕으로 한 행동은 적용하지 않습니다. **기록 내려받기**는 모델 결정과 게임 전후 상태를 JSON으로 저장합니다. Jev 호출에는 API 요금이 발생할 수 있습니다.
+1. **게임 연결**: 게임과 인터페이스를 고르면 그 인터페이스의 실행 방법과, 사람이 먼저 해야 할 일(`interface.json`의 `manual`)이 표시됩니다. **연결**을 누르면 실행 방법에 따라 동작합니다.
+   - socket + `launch`: 콘솔이 게임을 실행하고, **연결 끊기**를 누르면 종료합니다. sims 게임 6종과 빌드한 ArenaGame(`arena`의 `app` 인터페이스, `./build_game.sh` 필요)이 여기에 해당합니다.
+   - socket + `socket`: 이미 떠 있는 게임에 붙기만 합니다. 게임은 사람이 먼저 실행합니다.
+   - kbm: 열려 있는 게임 창에 KbmAgent가 붙습니다. 기본은 DRY-RUN(입력을 보내지 않고 기록만)이고, 화면 기록·손쉬운 사용 권한 상태가 표시됩니다.
+2. **모델 실행**: live 모델(게임에 행동을 적용)과 shadow 모델(같은 장면을 판단해 기록만)을 고릅니다. 기본값은 게임 타입의 매핑입니다. **한 턴 실행**, **자동 플레이**(`Esc`로 멈춤), **분석만 보기**(게임은 그대로), **새 판**(시작 상황 선택), 선택지별 **직접 조작**을 쓸 수 있습니다. 게임에 `policy`가 있으면 **policy 적용**을 켤 수 있습니다.
+   연결하면 게임 연결 아래에 세 카드가 계속 갱신됩니다. **게임 프로세스**(PID, 가동 시간, 죽으면 exit code), **응답**(마지막 응답이 몇 초 전인지, 왕복 시간, 실패 횟수), **실행 중인 빌드**(실행 파일 경로·빌드 시각·sha256과 "빌드 뒤에 바뀐 소스" 경고, 소스 실행이면 git 커밋과 커밋 안 된 수정)입니다.
+3. **게임과 모델**: 게임 상태판(`games/<게임>/view.js`, 없으면 표), kbm이면 캡처한 화면, 그리고 지금 단계(게임 관찰 → 모델 판단 → 행동 전송)와 모델 호출 목록이 나옵니다. 호출을 펼치면 엔드포인트, 모델, 보낸 요청(API 키는 가림), 받은 응답, 토큰, 걸린 시간을 볼 수 있습니다. 판단 예산(`config/game_types.json`의 `latency_budget_ms`)을 넘긴 호출은 빨갛게 표시됩니다.
+4. **판단 기록**: 매 턴 질문별(Choice·Score·Noul) 답과 게임이 계산한 정답, 모델별 누적 정답률이 쌓입니다. 행동을 적용한 턴은 `play.py run`과 같은 형식으로 `results/games/<게임>/<시각>/`에 기록되고, **기록 내려받기**로 JSON을 받을 수 있습니다.
 
-게임만 열어 직접 조작하려면 `dist/ArenaGame/ArenaGame`을 실행하면 됩니다. 기존 별도 Tk 테스트 창은 `uv run python controller.py`로 열 수 있습니다. WebView는 로컬 컴퓨터의 `127.0.0.1`에만 열리며 외부 사이트에 게시되지 않습니다.
+Jev를 쓰려면 화면에 API 키를 입력하거나 실행 전에 `JEV_API_KEY`를 설정하세요. 키는 콘솔 프로세스의 메모리에만 두고 게임이나 기록 파일에는 넣지 않습니다. Jev 호출에는 API 요금이 발생할 수 있습니다.
+
+콘솔은 `play.py run`과 같은 코드(`gamelab/runner.py`의 `tick`)로 관찰 → 판단 → 행동을 돌립니다. 그래서 새 게임을 추가할 때 콘솔을 고칠 필요가 없고, 게임마다 다른 실행 방법은 `interface.json`에만 적습니다. 기존 Tk 테스트 창은 `uv run python controller.py`로 열 수 있습니다.
 
 ## 준비
 
@@ -100,7 +109,7 @@ kbm_agent.py         # KbmAgent.app의 시작 파일 (화면 캡처와 입력 �
 | `danger` | Score | 다음 행동을 하기 전 현재 상태의 즉각적인 위험도 | 0=안전, 1=위협, 2=즉각적인 피격 또는 사망 위험. 중간 소수값도 가능 |
 | `incoming_attack` | Noul | 이동·공격·회피 등 아무 행동도 하지 않으면 이번 턴 적 공격이 맞는가 | 참일 가능성 0~1. 공격 시점·거리·엄폐를 고려 |
 
-실제 게임은 `action`만 적용합니다. Score·Noul은 분석용이며 행동을 덮어쓰지 않습니다. CLI·WebView·Tk 창에서 세 결과를 표시하고, JSON에는 `answers` 전체(Score 단계별 확률·신뢰도 등)를 보존합니다. 기존 결과 파일은 Choice만 실행했던 기록이며 새 결과와 질문 수·소요 시간이 다릅니다.
+실제 게임은 `action`만 적용합니다. Score·Noul은 분석용이며 행동을 덮어쓰지 않습니다. CLI·WebView에서 질문별 결과를 표시하고, JSON에는 `answers` 전체(Score 단계별 확률·신뢰도 등)를 보존합니다. 기존 결과 파일은 Choice만 실행했던 기록이며 새 결과와 질문 수·소요 시간이 다릅니다.
 
 `config/providers.json`에서 Jev는 `model`, `endpoint`, `timeout`, 두 Laya는 각각 `model`을 설정합니다. 기본값은 Jev `jev-latest`, 두 Laya `multilingual`입니다. 이 설정을 CLI·WebView·Tk 창이 공통으로 읽습니다. CLI의 `--jev-model`, `--laya-model`, `--timeout`은 해당 실행에만 우선 적용되며 파일을 수정하지 않습니다. Laya의 `auto`는 모델 자동 선택입니다.
 
@@ -178,6 +187,8 @@ uv run python play.py types     # 타입별 지연 예산과 live/shadow 모델
 ```
 
 `jev +laya-mlx`는 Jev가 실제로 플레이하고 Laya-MLX가 같은 장면을 함께 판단해 기록만 한다는 뜻입니다. 인터페이스가 여러 개인 게임은 기본값에 `*`가 붙습니다.
+
+> 게임별 Choice·Score·Noul 정의, 연결 설정, 질문·케이스·policy를 고치는 방법은 [docs/games-guide.md](docs/games-guide.md)에 정리되어 있습니다.
 
 여섯 게임은 모두 [`sims/`](sims/)의 시뮬레이션입니다. 빌드 없이 `play.py`가 `python -m sims serve <게임>`으로 직접 띄웁니다. 규칙을 게임이 전부 알고 있으므로, 매 상태마다 **질문별 정답(truth)** 을 계산해 상태와 함께 보냅니다. 모델에게는 설명문만 가고 정답은 채점에만 씁니다.
 
@@ -357,7 +368,7 @@ uv run python play.py run mygame --interface socket     # 이번 실행만 다�
 | `actions` | 선택지 → 게임에 보낼 명령 이름 | 선택지 → 키·마우스 입력 단계 |
 | 타이밍 | `interval_ms` | `interval_ms`, `max_age_ms`, `decision_keys`, `pause_key`, `reflex_hz` |
 
-자세한 형식은 [games/README.md](games/README.md)에 있습니다.
+자세한 형식은 [games/README.md](games/README.md)에, 게임별 설정과 수정 방법은 [docs/games-guide.md](docs/games-guide.md)에 있습니다.
 
 ### socket 게임 붙이기
 

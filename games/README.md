@@ -9,9 +9,10 @@ games/<게임>/
   cases.json                      비교용 상태와 질문별 정답(truth)
   interfaces/<이름>/interface.json  연결 방법 (connector: kbm 또는 socket)
   interfaces/<이름>/observer.py     kbm은 필수, socket은 선택
+  view.js                         (선택) WebView 콘솔에 그릴 이 게임의 상태판
 ```
 
-지금 있는 여섯 게임(`arena`, `cards`, `party`, `shooter`, `swarm`, `racer`)은 [sims/](../sims/)의 시뮬레이션이고, 매 상태의 정답을 게임이 직접 계산해 보냅니다.
+지금 있는 여섯 게임(`arena`, `cards`, `party`, `shooter`, `swarm`, `racer`)은 [sims/](../sims/)의 시뮬레이션이고, 매 상태의 정답을 게임이 직접 계산해 보냅니다. 게임별 설정과 "무엇을 바꾸려면 어디를 고치나"는 [docs/games-guide.md](../docs/games-guide.md)를 보세요. 이 문서는 파일 형식 참고용입니다.
 
 ```sh
 uv run python play.py new mygame --type realtime.action    # 비교 전용으로 시작
@@ -80,6 +81,8 @@ uv run python play.py run mygame --interface socket        # 인터페이스 골
 - `launch.command`: 게임 실행 명령. `"{python}"`은 지금 Python. 그 밖의 첫 항목이 상대 경로면 프로젝트 폴더 기준. 프로젝트 폴더에서 실행하고 `socket_arg`와 소켓 경로를 붙임
 - 이미 떠 있는 게임에 붙으려면 `launch` 대신 `"socket": "/소켓/경로"`
 - `actions`의 값: 게임에 `step`으로 보낼 명령 이름. 선택지 이름과 게임 명령 이름이 다르면 여기서 연결
+- `launch.sources` (선택): 이 빌드를 만드는 소스 파일·폴더. 실행 파일이 이 소스보다 오래되면 WebView 콘솔이 "다시 빌드하세요"라고 경고합니다. 예: `["game.py", "game_core.py", "game_ipc.py"]`. `{python} -m <패키지>`로 실행하면 기본값이 그 패키지 폴더입니다
+- `manual` (선택, socket·kbm 공통): 연결 전에 사람이 해야 할 일. WebView 콘솔의 연결 화면에 그대로 보입니다. 예: `"manual": "Steam에서 MyGame을 켜고 메인 메뉴까지 들어간 뒤 연결하세요"`
 - `observer.py`의 `describe(state)`: 게임이 주는 설명문 대신 모델에게 보낼 문장을 만들고 싶을 때만
 
 게임이 지켜야 할 요청 형식(`truth`, `done`, `reset` 포함)은 `gamelab/socket_game.py` 맨 위 주석과 프로젝트 README의 "socket 게임 붙이기"에 있습니다.
@@ -114,3 +117,15 @@ uv run python play.py run mygame --interface socket        # 인터페이스 골
 - `reflex(state)` (선택): 모델 없이 바로 반응할 행동 이름 또는 `None`
 
 observer.py는 빌드된 KbmAgent 안에서 실행되므로 표준 라이브러리, Pillow, `kbm.vision`만 import하세요.
+
+## view.js
+
+WebView 콘솔의 "GAME VIEW"에 이 게임의 상태를 그림으로 보여 줍니다. 없으면 상태를 표로 보여 줍니다. 게임마다 상태 모양이 다르므로 게임 폴더에 둡니다(인터페이스가 달라도 상태가 같으면 같은 그림을 씁니다).
+
+```js
+GameViews.register('mygame', (state, h) => h.track(cells, 'lane') + h.bar('체력', state.hp, 100) + h.chips(['조준 중']));
+```
+
+- `state`: 게임이 보낸 상태(socket의 snapshot, kbm의 observer가 만든 state)
+- `h`: 그리기 도구. `bar(이름, 값, 최대)`, `track([{text, cls}], 이름)`(칸 한 줄, cls는 `player enemy exit goal cover hazard range danger dim`), `chips([...])`, `stats([stat(이름, 값)])`, `esc(문자열)`. 그 밖에 `h.truth`, `h.options`, `h.done`
+- HTML 문자열을 돌려줍니다. 페이지 보안 정책상 `style="..."` 속성은 적용되지 않으니 위 도구의 클래스를 쓰세요. 막대 길이는 `data-w="퍼센트"`로 줍니다

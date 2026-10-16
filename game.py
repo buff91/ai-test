@@ -16,6 +16,9 @@ CYAN = "#65d9e8"
 ORANGE = "#ffb56a"
 RED = "#fa6876"
 GREEN = "#8fe3ab"
+# Keyboard shortcuts, so a kbm interface can play the window without clicking buttons.
+KEYS = {"attack": ("a", "A"), "dodge": ("space", "Space"), "reload": ("r", "R"),
+        "retreat": ("Left", "←"), "advance": ("Right", "→"), "wait": ("w", "W")}
 
 
 class ArenaWindow:
@@ -58,8 +61,10 @@ class ArenaWindow:
         controls.pack(fill="x")
         self.label(controls, "직접 조작", MUTED).pack(side="left", padx=(0, 9))
         for action in ACTIONS:
+            key, label = KEYS[action]
+            self.root.bind("<KeyPress-%s>" % key, lambda _, a=action: self.manual_step(a))
             tk.Button(
-                controls, text=ACTION_KO[action], command=lambda a=action: self.manual_step(a),
+                controls, text="%s %s" % (ACTION_KO[action], label), command=lambda a=action: self.manual_step(a),
                 font=("Helvetica Neue", 11), fg=TEXT, bg=PANEL,
                 activeforeground=TEXT, activebackground="#29425b", relief="flat", bd=0,
                 padx=8, pady=7,

@@ -29,6 +29,8 @@ class GameService:
             op = request.get("op")
             if op == "state":
                 return {"ok": True, **self._state()}
+            if op == "info":
+                return {"ok": True, "actions": list(ACTIONS), "scenarios": list(SCENARIOS)}
             if op == "reset":
                 scenario = request.get("scenario", "교전 시작")
                 if scenario not in SCENARIOS:

@@ -76,16 +76,14 @@ class GameCaseTests(unittest.TestCase):
                     self.assertEqual(set(GameCase(game_id, interface=name).actions), set(game.options))
 
     def test_one_game_can_switch_interfaces(self):
-        with tempfile.TemporaryDirectory() as games_dir:
-            shutil.copytree(GAMES / "arena", Path(games_dir) / "arena")
-            kbm = Path(games_dir) / "arena" / "interfaces" / "kbm"
-            shutil.copytree(FIXTURES / "kbm_demo" / "interfaces" / "kbm", kbm)
-            self.assertEqual(GameCase("arena", games_dir).connector, "socket")  # game.json default
-            game = GameCase("arena", games_dir, interface="kbm")
-            self.assertEqual(game.connector, "kbm")
-            self.assertEqual(game.cases(), GameCase("arena", games_dir).cases())  # same game, same cases
-            with self.assertRaises(LookupError):
-                GameCase("arena", games_dir, interface="nope")
+        # arena has socket (sims), app (the built window over its socket) and kbm (the same window, screen + keys).
+        self.assertEqual(GameCase("arena").connector, "socket")  # game.json default
+        self.assertEqual(GameCase("arena", interface="app").connector, "socket")
+        game = GameCase("arena", interface="kbm")
+        self.assertEqual(game.connector, "kbm")
+        self.assertEqual(game.cases(), GameCase("arena").cases())  # same game, same cases
+        with self.assertRaises(LookupError):
+            GameCase("arena", interface="nope")
 
     def test_interface_actions_must_match_the_games_choices(self):
         with tempfile.TemporaryDirectory() as games_dir:

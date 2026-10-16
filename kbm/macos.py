@@ -42,7 +42,14 @@ class MacPlatform:
                             "x": float(b["X"]), "y": float(b["Y"]),
                             "width": float(b["Width"]), "height": float(b["Height"])})
         if not matches:
-            raise LookupError("게임 창을 찾지 못했습니다: owner=%r" % self.owner)
+            Q = _quartz()
+            hidden = [w for w in Q.CGWindowListCopyWindowInfo(Q.kCGWindowListOptionAll, Q.kCGNullWindowID) or []
+                      if w.get("kCGWindowOwnerName") == self.owner and w.get("kCGWindowLayer", 0) == 0
+                      and w["kCGWindowBounds"]["Height"] > 100]
+            if hidden:
+                raise LookupError("%s 창이 화면에 없습니다. 최소화했거나 다른 데스크톱(Space)에 있으면 캡처할 수 없으니 "
+                                  "화면에 보이게 해 주세요 (다른 창에 가려지는 것은 괜찮습니다)." % self.owner)
+            raise LookupError("게임 창을 찾지 못했습니다: owner=%r (게임이 실행 중인지 확인하세요)" % self.owner)
         return max(matches, key=lambda m: m["width"] * m["height"])
 
     def is_frontmost(self, window):

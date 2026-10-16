@@ -1,7 +1,8 @@
 """Load one games/<id>/ folder: the game itself plus, optionally, one of its interfaces.
 
 games/<id>/game.json, questions.json, cases.json   what the game is and what is decided
-games/<id>/interfaces/<name>/interface.json          how to reach it ("connector": kbm or socket)
+games/<id>/interfaces/<name>/interface.json          how to reach it ("connector": kbm or socket),
+                                                     plus an optional "manual": what a person must do first
 
 questions.json is sent to the models as is. cases.json and the game itself may carry a
 "truth" per question (gamelab/grade.py), and game.json a "policy" (gamelab/policy.py).
@@ -107,6 +108,8 @@ class GameCase:
         where = "%s/interfaces/%s" % (self.id, self.interface)
         if not self.connector:
             raise ValueError("%s: interface.json에 connector(%s)가 필요합니다." % (where, ", ".join(CONNECTORS)))
+        if not isinstance(self.config.get("manual", ""), str):
+            raise ValueError("%s: manual은 사람이 먼저 할 일을 적은 문자열이어야 합니다." % where)
         if not isinstance(self.actions, dict) or set(self.options) != set(self.actions):
             raise ValueError("%s: questions의 선택지와 interface.json actions가 다릅니다: %s / %s"
                              % (where, sorted(self.options), sorted(self.actions or {})))
@@ -116,6 +119,11 @@ class GameCase:
         """Context manager yielding a client for the selected interface."""
         self.require_interface()
         return connector_module(self.connector).connect(self, **options)
+
+    def how_to_run(self):
+        """How the selected interface reaches the game, plus the steps a person must do first."""
+        self.require_interface()
+        return {**connector_module(self.connector).how_to_run(self), "manual": self.config.get("manual") or ""}
 
     def require_interface(self):
         if not self.interface:
