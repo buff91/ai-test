@@ -77,13 +77,14 @@ class GameServer(socketserver.ThreadingUnixStreamServer):
 
 
 class GameClient:
-    def __init__(self, path):
+    def __init__(self, path, timeout=3):
         self.path = str(path)
+        self.timeout = timeout
 
     def request(self, op, **kwargs):
         payload = (json.dumps({"op": op, **kwargs}, ensure_ascii=False) + "\n").encode("utf-8")
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conn:
-            conn.settimeout(3)
+            conn.settimeout(self.timeout)
             conn.connect(self.path)
             conn.sendall(payload)
             chunks = []

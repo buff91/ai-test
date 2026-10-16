@@ -1,0 +1,5 @@
+{
+  "name": "ArenaGame (턴제 예제 게임)",
+  "type": "turn.tactics",
+  "interface": "socket"
+}

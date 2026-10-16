@@ -1,0 +1,10 @@
+{
+  "connector": "socket",
+  "launch": {
+    "command": ["path/to/GameBuild"],
+    "socket_arg": "--socket",
+    "build_hint": "게임 빌드 경로를 확인하세요."
+  },
+  "interval_ms": 300,
+  "actions": {"act": "game_command_name", "wait": "wait"}
+}

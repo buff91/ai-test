@@ -1,0 +1,18 @@
+{
+  "action": {
+    "type": "choice",
+    "instructions": "In this turn-based deckbuilding card battle, which single action should the player take next?",
+    "criteria": {
+      "play_attack": "Play an attack card when dealing damage now is the best use of energy, especially if it can kill an enemy.",
+      "play_block": "Play a block card when the enemy intends to attack and the damage would hurt the player.",
+      "play_power": "Play a power card with lasting effects when the enemy is not threatening much damage this turn.",
+      "use_potion": "Use a potion when it prevents a lethal or very costly outcome.",
+      "end_turn": "End the turn when no useful card can be played with the remaining energy."
+    }
+  },
+  "danger": {
+    "type": "score",
+    "instructions": "How much danger is the player in after this enemy turn if they do nothing more?",
+    "criteria": ["Safe", "Threatened", "Lethal"]
+  }
+}

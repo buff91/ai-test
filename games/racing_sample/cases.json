@@ -1,0 +1,7 @@
+[
+  {"id": "hairpin_fast", "state": "Speed 210 km/h. A hairpin turn to the left begins in 60 meters. The car is in the center of the track.", "reference_action": "brake"},
+  {"id": "long_straight", "state": "Speed 180 km/h on a long clear straight. Boost is full. No cars ahead for 400 meters.", "reference_action": "boost"},
+  {"id": "drifting_right", "state": "Speed 140 km/h through a gentle left corner. The car is drifting toward the right edge of the track.", "reference_action": "steer_left"},
+  {"id": "obstacle_left", "state": "Speed 160 km/h. A crashed car blocks the left half of the track 40 meters ahead. The right side is clear.", "reference_action": "steer_right"},
+  {"id": "corner_exit", "state": "Speed 90 km/h exiting a corner onto a short straight. Boost is empty. The track ahead is clear.", "reference_action": "accelerate"}
+]

@@ -1,0 +1,18 @@
+{
+  "action": {
+    "type": "choice",
+    "instructions": "In this turn-based party RPG battle, which single action should the active character take?",
+    "criteria": {
+      "attack": "Attack a single enemy, especially to finish a weakened one, when the party is healthy.",
+      "aoe_skill": "Use an area skill that hits all enemies when several enemies are present and mana allows.",
+      "heal": "Heal an ally whose health is low enough to be at risk of falling this round.",
+      "guard": "Guard to reduce incoming damage when the character is the likely target of a big attack.",
+      "use_item": "Use an item to revive a fallen ally or cure a crippling status when no skill can."
+    }
+  },
+  "danger": {
+    "type": "score",
+    "instructions": "How likely is the party to lose a member this round?",
+    "criteria": ["Unlikely", "Possible", "Very likely"]
+  }
+}

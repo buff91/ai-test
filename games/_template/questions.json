@@ -1,0 +1,10 @@
+{
+  "action": {
+    "type": "choice",
+    "instructions": "Which single action should the player take next based on this state?",
+    "criteria": {
+      "act": "Describe when this action is right.",
+      "wait": "Hold position when acting now would be premature."
+    }
+  }
+}

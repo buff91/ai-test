@@ -1,0 +1,7 @@
+[
+  {"id": "lethal_on_enemy", "state": "Player has 40/70 HP and 2 energy. The only enemy has 6 HP and intends to attack for 12. Hand: Strike (1 energy, 6 damage), Defend (1 energy, 5 block), Inflame (1 energy, power: +2 strength).", "reference_action": "play_attack"},
+  {"id": "big_hit_incoming", "state": "Player has 18/70 HP and 1 energy. The enemy has 80 HP and intends to attack for 16. Hand: Strike (1 energy, 6 damage), Defend (1 energy, 5 block). A Block Potion (gain 12 block) is available.", "reference_action": "use_potion"},
+  {"id": "enemy_buffing", "state": "Player has 60/70 HP and 3 energy. The enemy has 120 HP and intends to buff itself this turn, dealing no damage. Hand: Demon Form (3 energy, power: gain 2 strength every turn), Strike, Defend.", "reference_action": "play_power"},
+  {"id": "moderate_attack", "state": "Player has 30/70 HP and 1 energy. The enemy has 50 HP and intends to attack for 9. Hand: Strike (1 energy, 6 damage), Defend (1 energy, 5 block). No potions.", "reference_action": "play_block"},
+  {"id": "no_energy", "state": "Player has 45/70 HP and 0 energy left. The enemy has 30 HP and intends to attack for 7. Hand: Strike (1 energy), Defend (1 energy). No potions.", "reference_action": "end_turn"}
+]

@@ -88,66 +88,10 @@ function updateGame(data) {
   const game = data.game;
   if (!game) return;
   const s = game.snapshot;
-  document.getElementById('game-turn').textContent = `TURN ${String(s.turn).padStart(2,'0')}`;
-  document.getElementById('hp-value').innerHTML = `${s.hp} <em>/ 100</em>`;
-  document.getElementById('ammo-value').innerHTML = `${s.ammo} <em>/ 3</em>`;
-  document.getElementById('enemy-value').innerHTML = `${s.enemy_hp} <em>/ 60</em>`;
-  document.getElementById('hp-bar').style.width = `${s.hp}%`;
-  document.getElementById('ammo-bar').style.width = `${s.ammo / 3 * 100}%`;
-  document.getElementById('enemy-bar').style.width = `${s.enemy_hp / 60 * 100}%`;
-  document.getElementById('game-outcome').textContent = s.outcome === 'playing' ?
-    (game.events.join(' ') || '포탑을 파괴하고 오른쪽 출구에 도착하세요') :
-    (s.outcome === 'won' ? 'MISSION COMPLETE' : 'MISSION FAILED');
   document.getElementById('state-text').textContent = game.description;
   document.getElementById('stat-turn').textContent = String(s.turn).padStart(2,'0');
   document.getElementById('connection-text').textContent = data.error && data.error.startsWith('게임 연결') ? '게임 연결 끊김' : '게임 실행 파일 연결됨';
   document.querySelector('.pulse').classList.toggle('off', !!(data.error && data.error.startsWith('게임 연결')));
-  drawGame(s);
-}
-
-function drawGame(s) {
-  const canvas = document.getElementById('game-canvas');
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const width = canvas.clientWidth, height = canvas.clientHeight;
-  if (canvas.width !== Math.round(width*dpr) || canvas.height !== Math.round(height*dpr)) {
-    canvas.width = Math.round(width*dpr); canvas.height = Math.round(height*dpr);
-  }
-  const ctx = canvas.getContext('2d');
-  ctx.setTransform(dpr,0,0,dpr,0,0);
-  const floor = height - 58;
-  const x = tile => 55 + (width - 110) * tile / 8;
-  const gradient = ctx.createLinearGradient(0,0,0,height);
-  gradient.addColorStop(0,'#0e1c2a'); gradient.addColorStop(1,'#172e3d');
-  ctx.fillStyle = gradient; ctx.fillRect(0,0,width,height);
-  ctx.strokeStyle = '#193244'; ctx.lineWidth = 1;
-  for(let gx=0;gx<width;gx+=40){ctx.beginPath();ctx.moveTo(gx,0);ctx.lineTo(gx,height);ctx.stroke();}
-  for(let gy=0;gy<height;gy+=40){ctx.beginPath();ctx.moveTo(0,gy);ctx.lineTo(width,gy);ctx.stroke();}
-  ctx.fillStyle='#203748';ctx.fillRect(0,floor,width,height-floor);
-  ctx.fillStyle='#62d9e6';ctx.fillRect(0,floor,width,2);
-  ctx.font='10px Menlo, monospace';ctx.textAlign='center';
-  for(let tile=0;tile<=8;tile++){ctx.fillStyle='#7795a6';ctx.fillText(String(tile),x(tile),floor+28);}
-  ctx.fillStyle='#496879';ctx.strokeStyle='#62d9e6';ctx.lineWidth=2;
-  ctx.fillRect(x(2)-21,floor-51,42,51);ctx.strokeRect(x(2)-21,floor-51,42,51);
-  ctx.fillStyle='#65d9e8';ctx.fillText('COVER',x(2),floor-64);
-  ctx.fillStyle='#164339';ctx.fillRect(x(8)-23,floor-118,46,118);
-  ctx.strokeStyle='#8be2a3';ctx.strokeRect(x(8)-23,floor-118,46,118);
-  ctx.fillStyle='#8be2a3';ctx.fillText('EXIT',x(8),floor-130);
-  if(s.enemy_hp>0){
-    const e=x(s.enemy_x),color=s.enemy_windup?'#f06d78':'#f2aa68';
-    ctx.fillStyle='#784d58';ctx.fillRect(e-27,floor-84,54,65);
-    ctx.strokeStyle=color;ctx.lineWidth=2;ctx.strokeRect(e-27,floor-84,54,65);
-    ctx.fillStyle=color;ctx.beginPath();ctx.arc(e,floor-53,8,0,Math.PI*2);ctx.fill();
-    ctx.fillText(s.enemy_windup?'CHARGING':'TURRET',e,floor-100);
-    if(s.enemy_windup){ctx.setLineDash([5,7]);ctx.beginPath();ctx.moveTo(e-28,floor-52);ctx.lineTo(x(s.player_x),floor-55);ctx.stroke();ctx.setLineDash([]);}
-  }
-  const p=x(s.player_x);ctx.fillStyle='#3d96a8';ctx.strokeStyle='#65d9e8';ctx.lineWidth=2;
-  ctx.beginPath();ctx.moveTo(p,floor-80);ctx.lineTo(p+19,floor-65);ctx.lineTo(p+15,floor-26);ctx.lineTo(p-15,floor-26);ctx.lineTo(p-19,floor-65);ctx.closePath();ctx.fill();ctx.stroke();
-  ctx.fillStyle='#65d9e8';ctx.fillText('PLAYER',p,floor-95);
-  if(s.outcome!=='playing'){
-    ctx.fillStyle='#07111ad9';ctx.fillRect(0,0,width,height);
-    ctx.fillStyle=s.outcome==='won'?'#8be2a3':'#f06d78';ctx.font='bold 26px -apple-system,sans-serif';
-    ctx.fillText(s.outcome==='won'?'MISSION COMPLETE':'MISSION FAILED',width/2,height/2);
-  }
 }
 
 function modelHtml(result, secondary=false) {
@@ -208,4 +152,3 @@ async function poll() {
 setupControls();
 poll();
 setInterval(poll,350);
-window.addEventListener('resize',()=>{if(latest?.game)drawGame(latest.game.snapshot);});

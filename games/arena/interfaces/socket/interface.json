@@ -1,0 +1,17 @@
+{
+  "connector": "socket",
+  "launch": {
+    "command": ["dist/ArenaGame/ArenaGame"],
+    "socket_arg": "--socket",
+    "build_hint": "./build_game.sh로 먼저 빌드하세요."
+  },
+  "interval_ms": 300,
+  "actions": {
+    "attack": "attack",
+    "dodge": "dodge",
+    "reload": "reload",
+    "retreat": "retreat",
+    "advance": "advance",
+    "wait": "wait"
+  }
+}

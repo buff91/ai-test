@@ -39,9 +39,9 @@ def load_cases(path):
     return data
 
 
-def call_jev(state, key, model, timeout):
+def call_jev(state, key, model, timeout, questions=QUESTIONS):
     payload = json.dumps(
-        {"model": model, "state": state, "questions": QUESTIONS},
+        {"model": model, "state": state, "questions": questions},
         ensure_ascii=False,
     ).encode("utf-8")
     request = urllib.request.Request(

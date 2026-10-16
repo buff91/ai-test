@@ -1,0 +1,7 @@
+[
+  {"id": "low_hp_potion", "state": "Player health is critical (20%). 1 enemy groups are visible; the nearest is out of range. The skill is ready and a potion is ready.", "reference_action": "drink_potion"},
+  {"id": "grouped_skill", "state": "Player health is high (90%). 3 enemy groups are visible; the nearest is in attack range. The skill is ready and a potion is ready.", "reference_action": "skill_on_target"},
+  {"id": "single_in_range", "state": "Player health is high (80%). 1 enemy groups are visible; the nearest is in attack range. The skill is on cooldown and a potion is ready.", "reference_action": "attack_target"},
+  {"id": "swarmed_no_potion", "state": "Player health is low (35%). 4 enemy groups are visible; the nearest is in attack range. The skill is on cooldown and a potion is not available.", "reference_action": "kite_back"},
+  {"id": "empty_map", "state": "Player health is high (100%). No enemies are visible. The skill is ready and a potion is ready.", "reference_action": "hold"}
+]

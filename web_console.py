@@ -23,7 +23,6 @@ from game_ipc import GameClient
 ROOT = Path(__file__).resolve().parent
 WEB = ROOT / "web"
 GAME_BINARY = ROOT / "dist" / "ArenaGame" / "ArenaGame"
-PROVIDERS = ("jev", "laya", "laya-mlx")
 
 
 class Lab:

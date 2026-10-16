@@ -1,0 +1,11 @@
+{
+  "connector": "kbm",
+  "window": {"owner": "GameAppName", "title_contains": ""},
+  "interval_ms": 700,
+  "max_age_ms": 800,
+  "max_action_ms": 1500,
+  "decision_keys": [],
+  "pause_key": null,
+  "reflex_hz": 0,
+  "actions": {"act": [{"tap": "space"}], "wait": []}
+}

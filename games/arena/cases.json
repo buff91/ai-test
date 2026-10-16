@@ -1,0 +1,27 @@
+[
+  {
+    "id": "enemy_windup",
+    "state": "The player has high health. A nearby enemy has started a heavy attack windup that will hit the player's current position. Dodge is ready. The player cannot interrupt the attack in time.",
+    "reference_action": "dodge"
+  },
+  {
+    "id": "safe_attack",
+    "state": "The player has high health and a loaded weapon. The enemy is within range, exposed, and recovering from a missed attack. No incoming attack is imminent.",
+    "reference_action": "attack"
+  },
+  {
+    "id": "empty_weapon",
+    "state": "The player is safely behind cover. The weapon is empty and spare ammunition is available. No enemy can currently hit the player.",
+    "reference_action": "reload"
+  },
+  {
+    "id": "critical_health",
+    "state": "The player's health is critical. Two enemies are advancing, the weapon is nearly empty, and there is a safe exit behind the player. Dodge is on cooldown.",
+    "reference_action": "retreat"
+  },
+  {
+    "id": "clear_path",
+    "state": "No enemies are visible or nearby. The weapon is loaded, the player has high health, and the next objective is directly ahead along a clear path.",
+    "reference_action": "advance"
+  }
+]

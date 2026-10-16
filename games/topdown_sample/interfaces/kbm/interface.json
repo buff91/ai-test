@@ -1,0 +1,17 @@
+{
+  "connector": "kbm",
+  "window": {"owner": "GameAppName", "title_contains": ""},
+  "interval_ms": 800,
+  "max_age_ms": 900,
+  "max_action_ms": 800,
+  "decision_keys": ["hp_band", "enemy_count", "enemy_in_range", "skill_ready", "potion_ready"],
+  "pause_key": "escape",
+  "reflex_hz": 0,
+  "actions": {
+    "attack_target": [{"click": "right", "at": "target"}],
+    "skill_on_target": [{"move": "target"}, {"tap": "q"}],
+    "kite_back": [{"click": "right", "at": "safe_point"}],
+    "drink_potion": [{"tap": "1"}],
+    "hold": []
+  }
+}
