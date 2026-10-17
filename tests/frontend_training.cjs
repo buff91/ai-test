@@ -36,6 +36,7 @@ const node = id => nodes.get(`training-${id}`);
 const requests = [];
 const applications = [];
 let rejectApply = false;
+let postHandler = null;
 const game = {id: 'racer', name: '레이싱', questions: {action: {type: 'choice', criteria: {brake: 'Brake', keep: 'Keep'}}, danger: {type: 'score', criteria: ['safe', 'danger']}}};
 let version = 'desktop-v1';
 let backend = {game: 'racer', version, dataset: {cases: [], counts: {total: 0, pending: 0, train: 0, eval: 0, excluded: 0}}, jobs: [], checkpoints: [], active: null};
@@ -47,6 +48,12 @@ panel.init({api: async (url, payload) => {
   requests.push({url, payload: payload && clone(payload)});
   if (payload) {
     if (rejectApply && url.endsWith('/apply')) throw new Error('평가 결과가 변경되었습니다.');
+    if (postHandler) return postHandler(url, payload);
+    if (url.endsWith('/apply')) return {ok: true, provider: backend.checkpoints.find(item => item.id === payload.checkpoint_id)?.runtime || 'laya'};
+    if (url.endsWith('/rollback')) {
+      if (backend.active_by_provider) backend.active_by_provider[payload.provider] = null;
+      if (payload.provider === 'laya') backend.active = null;
+    }
     return {ok: true};
   }
   return getHandler ? getHandler(url) : clone(backend);
@@ -54,6 +61,7 @@ panel.init({api: async (url, payload) => {
 const settle = () => new Promise(resolve => setImmediate(resolve));
 const trigger = async (id, event = 'click', target) => { node(id).listeners[event]({target: target || node(id)}); await settle(); };
 const checkpointButton = (id, action) => node('checkpoints').buttons.find(button => button.dataset.checkpoint === id && button.dataset.trainingAction === action);
+const checkpointCard = id => node('checkpoints').innerHTML.split('<article class="training-checkpoint">').find(card => card.startsWith(`<div class="training-checkpoint-title"><b>${id}</b>`))?.split('</article>')[0] || '';
 const posts = endpoint => requests.filter(request => request.url === `/api/training/${endpoint}`);
 
 (async () => {
@@ -63,17 +71,28 @@ const posts = endpoint => requests.filter(request => request.url === `/api/train
   assert.equal(node('collect').disabled, true);
   assert.equal(node('train').disabled, true);
   assert.match(node('game').textContent, /레이싱 · desktop-v1/);
-  assert.match(nodes.get('laya-training').innerHTML, /Laya-MLX는 기본 모델/);
+  assert.match(nodes.get('laya-training').innerHTML, /각 실행 방식의 체크포인트는 따로 평가/);
+  assert.match(nodes.get('laya-training').innerHTML, /정답은 어떻게 가르치나요/);
+  assert.match(nodes.get('laya-training').innerHTML, /예측 확률이 높아지도록 가중치를 업데이트/);
+  assert.match(nodes.get('laya-training').innerHTML, /검토 대기·제외 사례는 학습에 쓰지 않습니다/);
+  assert.match(nodes.get('laya-training').innerHTML, /평가용 정답은 가중치 학습에 쓰지 않고/);
+  assert.match(nodes.get('laya-training').innerHTML, /잘못 승인한 답도 그대로 학습/);
+  assert.match(nodes.get('laya-training').innerHTML, /올바르게 행동한 상황과 경계 상황/);
+  assert.match(nodes.get('laya-training').innerHTML, /서로 다른 판이나 시작 상황/);
+  assert.equal(node('rollback-mlx').disabled, true);
   const count = requests.length;
   panel.update(disconnected, game); await settle();
   assert.equal(requests.length, count, '500 ms app polling must not produce another training GET');
 
   // Pending oracle labels are a proposal, never automatically approved or trained.
-  backend.dataset = {cases: [{id: 'case-one', review: 'pending', split: 'train', reason: '<img src=x onerror=alert(1)>', state: '<script>bad()</script>', questions: game.questions, suggested_expected: {action: 'brake', danger: 1}, expected: {}, source: {decision: {action: 'keep'}}, occurrences: 3}], counts: {total: 1, pending: 1, approved: 0, train: 0, eval: 0, excluded: 0}};
+  backend.dataset = {cases: [{id: 'case-one', review: 'pending', split: 'train', reason: '<img src=x onerror=alert(1)>', state: '<script>bad()</script>', questions: game.questions, suggested_expected: {action: 'brake', danger: 1}, expected: {}, source: {episode: 2, step: 14, decision: {action: 'keep'}, reference_kind: 'turn_search', truth: {action: ['brake', 'keep']}}, occurrences: 3}], counts: {total: 1, pending: 1, approved: 0, train: 0, eval: 0, excluded: 0}};
   await panel.refresh(true);
   assert.equal(node('action').value, 'brake');
   assert.equal(node('state').textContent, '<script>bad()</script>', 'untrusted state is assigned via textContent');
   assert.match(node('answer').textContent, /아직 승인하지 않음/);
+  assert.match(node('answer').textContent, /턴제 행동 탐색/);
+  assert.match(node('case-note').textContent, /3번째 게임 · 판단 14/);
+  assert.deepEqual(JSON.parse(node('answer').textContent).기준이_허용한_행동, ['brake', 'keep']);
   assert.match(node('case').innerHTML, /&lt;img/);
   assert.doesNotMatch(node('case').innerHTML, /<img/);
   assert.equal(node('train').disabled, true);
@@ -142,6 +161,15 @@ const posts = endpoint => requests.filter(request => request.url === `/api/train
   assert.match(node('jobs').innerHTML, /&lt;download failed&gt;/);
   assert.doesNotMatch(node('jobs').innerHTML, /<script>/);
   assert.equal(checkpointButton('candidate-1', 'apply').disabled, true);
+  assert.equal(checkpointButton('candidate-1', 'convert').disabled, false, 'unevaluated compatible PyTorch checkpoints can be converted');
+  await trigger('checkpoints', 'click', checkpointButton('candidate-1', 'convert'));
+  assert.deepEqual(posts('convert').at(-1).payload, {game: 'racer', version: 'desktop-v1', checkpoint_id: 'candidate-1', dtype: 'float16'});
+  backend.checkpoints[0].compatible = false;
+  await panel.refresh(true);
+  assert.equal(checkpointButton('candidate-1', 'convert'), undefined, 'incompatible checkpoints cannot be converted');
+  assert.equal(checkpointButton('candidate-1', 'evaluate').disabled, true);
+  backend.checkpoints[0].compatible = true;
+  await panel.refresh(true);
   const forgedClick = checkpointButton('candidate-1', 'apply'); forgedClick.disabled = false;
   await trigger('checkpoints', 'click', forgedClick);
   assert.equal(posts('apply').length, 0, 'apply handler rechecks the server-provided gate');
@@ -156,7 +184,7 @@ const posts = endpoint => requests.filter(request => request.url === `/api/train
   assert.equal(checkpointButton('candidate-1', 'apply').disabled, false);
   await trigger('checkpoints', 'click', checkpointButton('candidate-1', 'apply'));
   assert.deepEqual(posts('apply').at(-1).payload, {game: 'racer', version: 'desktop-v1', checkpoint_id: 'candidate-1'});
-  assert.deepEqual(applications, [{game: 'racer', version: 'desktop-v1', checkpoint_id: 'candidate-1'}]);
+  assert.deepEqual(applications, [{game: 'racer', version: 'desktop-v1', checkpoint_id: 'candidate-1', provider: 'laya'}]);
   rejectApply = true;
   await trigger('checkpoints', 'click', checkpointButton('candidate-1', 'apply'));
   assert.equal(applications.length, 1, 'a rejected apply must not switch the selected provider');
@@ -164,7 +192,47 @@ const posts = endpoint => requests.filter(request => request.url === `/api/train
   backend.active = {checkpoint_id: 'candidate-1'};
   await panel.refresh(true);
   await trigger('rollback');
-  assert.equal(posts('rollback').at(-1).payload.game, 'racer');
+  assert.deepEqual(posts('rollback').at(-1).payload, {game: 'racer', version: 'desktop-v1', provider: 'laya'});
+
+  // Converted MLX artifacts receive an independent evaluation gate, even when the source passed.
+  backend.jobs.push({id: 'convert-1', kind: 'convert', status: 'completed', progress: 1, checkpoint_id: 'candidate-mlx'});
+  backend.checkpoints.push({id: 'candidate-mlx', runtime: 'laya-mlx', source_checkpoint_id: 'candidate-1', compatible: true, activation_allowed: false, evaluation: null, reasons: ['MLX 평가 필요']});
+  await panel.refresh(true);
+  assert.match(node('jobs').innerHTML, /MLX 변환/);
+  assert.equal(checkpointButton('candidate-mlx', 'convert'), undefined);
+  assert.equal(checkpointButton('candidate-mlx', 'apply').disabled, true, 'source approval must never activate its MLX conversion');
+  assert.equal(checkpointButton('candidate-1', 'apply').disabled, false);
+  assert.match(checkpointCard('candidate-mlx'), /아직 평가하지 않았습니다/);
+  assert.doesNotMatch(checkpointCard('candidate-mlx'), /80\.0%/);
+  assert.match(checkpointCard('candidate-mlx'), /원본의 평가·적용 승인은 승계하지 않습니다/);
+  assert.match(checkpointCard('candidate-mlx'), /Laya-MLX로 전환해 적용/);
+  await trigger('checkpoints', 'click', checkpointButton('candidate-mlx', 'evaluate'));
+  assert.deepEqual(posts('evaluate').at(-1).payload, {game: 'racer', version: 'desktop-v1', checkpoint_id: 'candidate-mlx'});
+  backend.checkpoints[1].evaluation = {held_out: true, eval_count: 1, before: {action_accuracy: .5}, after: {action_accuracy: .8}};
+  backend.checkpoints[1].activation_allowed = true;
+  await panel.refresh(true);
+  await trigger('checkpoints', 'click', checkpointButton('candidate-mlx', 'apply'));
+  assert.equal(applications.at(-1).provider, 'laya-mlx', 'provider switch follows the successful API result');
+  assert.equal(applications.at(-1).checkpoint_id, 'candidate-mlx');
+  assert.match(checkpointCard('candidate-mlx'), /기본 Laya-MLX/);
+
+  // Each runtime has its own active indicator and rollback request.
+  backend.active_by_provider = {laya: {checkpoint_id: 'candidate-1'}, 'laya-mlx': {checkpoint_id: 'candidate-mlx'}};
+  backend.active = {checkpoint_id: 'candidate-1'};
+  await panel.refresh(true);
+  assert.equal(node('rollback').disabled, false);
+  assert.equal(node('rollback-mlx').disabled, false);
+  assert.match(node('active').textContent, /candidate-1/);
+  assert.match(node('active-mlx').textContent, /candidate-mlx/);
+  await trigger('rollback-mlx');
+  assert.deepEqual(posts('rollback').at(-1).payload, {game: 'racer', version: 'desktop-v1', provider: 'laya-mlx'});
+  assert.equal(node('rollback-mlx').disabled, true);
+  assert.equal(node('rollback').disabled, false);
+  assert.match(node('active').textContent, /candidate-1/, 'MLX rollback preserves the PyTorch activation');
+  assert.match(node('active-mlx').textContent, /기본 모델 사용 중/);
+  await trigger('rollback');
+  assert.equal(node('rollback').disabled, true);
+  assert.equal(node('rollback-mlx').disabled, true);
 
   // A refresh failure visibly blocks promotion using potentially stale metrics.
   getHandler = async () => { throw new Error('server <offline>'); };
@@ -200,13 +268,40 @@ const posts = endpoint => requests.filter(request => request.url === `/api/train
   assert.doesNotMatch(node('counts').innerHTML, />99</);
   assert.equal(node('train').disabled, true);
 
-  // Changing games immediately replaces the durable dataset and checkpoint namespace.
+  // A successful old-version apply must not switch the current game's newly selected runtime.
+  backend.checkpoints = [{id: 'sim-mlx', runtime: 'laya-mlx', activation_allowed: true, compatible: true}];
+  await panel.refresh(true);
+  let finishApply;
+  postHandler = (url, payload) => new Promise(resolve => { finishApply = resolve; });
+  const previousApplications = applications.length;
+  await trigger('checkpoints', 'click', checkpointButton('sim-mlx', 'apply'));
+  version = 'desktop-v1';
+  backend = {game: 'racer', version, dataset: {cases: [], counts: {}}, jobs: [], checkpoints: [], active: null, active_by_provider: {laya: null, 'laya-mlx': null}};
+  panel.update(disconnected, game);
+  finishApply({ok: true, provider: 'laya-mlx'});
+  postHandler = null;
+  await settle();
+  await panel.refresh(true);
+  assert.equal(applications.length, previousApplications, 'old version apply response cannot change the new selection');
+  assert.equal(node('rollback-mlx').disabled, true);
+  assert.doesNotMatch(node('active-mlx').textContent, /sim-mlx/);
+
+  // Switching games during apply also suppresses an old result's provider callback.
+  backend.checkpoints = [{id: 'desktop-mlx', runtime: 'laya-mlx', activation_allowed: true, compatible: true}];
+  await panel.refresh(true);
+  let finishOtherApply;
+  postHandler = () => new Promise(resolve => { finishOtherApply = resolve; });
+  await trigger('checkpoints', 'click', checkpointButton('desktop-mlx', 'apply'));
   const other = {...game, id: 'party', name: '파티 RPG'};
-  backend = {...backend, game: 'party'};
-  panel.update(disconnected, other); await settle();
+  backend = {...backend, game: 'party', checkpoints: []};
+  panel.update(disconnected, other);
+  finishOtherApply({ok: true, provider: 'laya-mlx'});
+  postHandler = null;
+  await settle(); await panel.refresh(true);
+  assert.equal(applications.length, previousApplications, 'old game apply response cannot change another game');
   assert.match(requests.at(-1).url, /game=party/);
   assert.match(node('game').textContent, /파티 RPG/);
   assert.equal(node('rollback').disabled, true);
   assert.match(node('case').innerHTML, /저장된 사례 없음/);
-  console.log('training panel: reviewed labels, tuning validation, async jobs, escaped data, evaluation/apply gates, offline errors and game/version identity passed');
+  console.log('training panel: reviewed labels, label guidance, PyTorch/MLX conversion and independent gates, provider activation/rollback, async failures, escaped data and game/version races passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

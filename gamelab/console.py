@@ -614,8 +614,8 @@ class Lab:
                 self.preparations.append(preparation)
         started = time.perf_counter()
         try:
-            if self.make_decider is default_decider and provider == "laya":
-                checkpoint = self.training.active_checkpoint(game)
+            if self.make_decider is default_decider and provider in ("laya", "laya-mlx"):
+                checkpoint = self.training.active_checkpoint(game, provider=provider)
                 decider = self.make_decider(provider, game, key, checkpoint=checkpoint)
                 if checkpoint:
                     preparation["checkpoint"] = str(checkpoint)
@@ -984,25 +984,31 @@ class Lab:
     def training_evaluate(self, game_id, checkpoint_id, version=None):
         return self.training.start_evaluate(self._training_game(game_id, version), checkpoint_id)
 
+    def training_convert(self, game_id, checkpoint_id, dtype="float16", version=None):
+        return self.training.start_convert(self._training_game(game_id, version), checkpoint_id, dtype=dtype)
+
     def training_apply(self, game_id, checkpoint_id, version=None):
         game = self._training_game(game_id, version)
         with self.lock:
             if self.busy or self.auto:
                 raise ValueError("게임 자동 제어를 중지하고 현재 판단이 끝난 뒤 적용하세요.")
             result = self.training.activate(game, checkpoint_id)
+            provider = result.get("runtime", "laya") if isinstance(result, dict) else "laya"
             if self.game is not None and self.game.id == game.id and self.game.version == game.version:
-                self.options["provider"] = "laya"
-                self.options["shadows"] = [p for p in self.options.get("shadows", []) if p != "laya"]
-            self._event("%s / %s: 평가한 Laya 체크포인트를 적용했습니다." % (game.id, game.version))
-            return result
+                self.options["provider"] = provider
+                self.options["shadows"] = [p for p in self.options.get("shadows", []) if p != provider]
+            self._event("%s / %s: 평가한 %s 체크포인트를 적용했습니다." % (game.id, game.version, provider))
+            return {**result, "provider": provider} if isinstance(result, dict) else result
 
-    def training_rollback(self, game_id, version=None):
+    def training_rollback(self, game_id, version=None, provider="laya"):
         game = self._training_game(game_id, version)
+        if provider not in ("laya", "laya-mlx"):
+            raise ValueError("복원할 런타임은 Laya 또는 Laya-MLX여야 합니다.")
         with self.lock:
             if self.busy or self.auto:
                 raise ValueError("게임 자동 제어를 중지하고 현재 판단이 끝난 뒤 되돌리세요.")
-            result = self.training.rollback(game)
-            self._event("%s / %s: 기본 Laya 모델로 되돌렸습니다." % (game.id, game.version))
+            result = self.training.rollback(game, provider=provider)
+            self._event("%s / %s: 기본 %s 모델로 되돌렸습니다." % (game.id, game.version, provider))
             return result
 
     def export(self):

@@ -57,10 +57,19 @@ def _router(provider, checkpoint=None):
         cached = cache_key in _ROUTERS
         if not cached:
             if checkpoint:
-                if provider != "laya":
-                    raise ValueError("학습 체크포인트는 Laya (PyTorch)에서 사용하세요.")
-                from laya import Router
-                _ROUTERS[cache_key] = Router(models={"game-checkpoint": str(checkpoint)})
+                if provider == "laya":
+                    from laya import Router
+                    router_options = {}
+                elif provider == "laya-mlx":
+                    from laya_mlx import Router
+                    metadata = json.loads((Path(checkpoint) / "mlx_config.json").read_text(encoding="utf-8"))
+                    dtype = metadata.get("dtype")
+                    if metadata.get("format") != "laya-mlx" or dtype not in ("float16", "float32", "bfloat16"):
+                        raise ValueError("변환한 MLX 체크포인트의 형식과 정밀도를 확인하세요.")
+                    router_options = {"dtype": dtype}
+                else:
+                    raise ValueError("학습 체크포인트는 Laya 또는 Laya-MLX에서 사용하세요.")
+                _ROUTERS[cache_key] = Router(models={"game-checkpoint": str(checkpoint)}, **router_options)
                 # Old deciders retain their own reference until the current run ends.
                 for key in list(_ROUTERS):
                     if isinstance(key, tuple) and key[0] == provider and key != cache_key:
@@ -93,8 +102,8 @@ class Decider:
         self.laya_model = laya_model or PROVIDERS.get(provider, {}).get("model")
         self.checkpoint_path = str(Path(checkpoint).resolve()) if checkpoint else None
         if self.checkpoint_path:
-            if provider != "laya":
-                raise ValueError("학습 체크포인트는 Laya (PyTorch)에서 사용하세요.")
+            if provider not in ("laya", "laya-mlx"):
+                raise ValueError("학습 체크포인트는 Laya 또는 Laya-MLX에서 사용하세요.")
             self.laya_model = "game-checkpoint"
         self.timeout = timeout or PROVIDERS["jev"]["timeout"]
         self.router, self.router_cached = ((None, None) if provider == "jev" else

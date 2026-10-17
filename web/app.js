@@ -642,8 +642,8 @@ function setupControls() {
     getVersion: () => connectedGame()?.id === selectedGame()?.id ? latest?.connection?.target?.version : selectedInterface()?.version,
     onApplied: applied => {
       const version = connectedGame()?.id === selectedGame()?.id ? latest?.connection?.target?.version : selectedInterface()?.version;
-      if (selectedGame()?.id !== applied.game || version !== applied.version) return;
-      choice = {...choice, provider: 'laya', shadows: choice.shadows.filter(provider => provider !== 'laya')};
+      if (selectedGame()?.id !== applied.game || version !== applied.version || !['laya', 'laya-mlx'].includes(applied.provider)) return;
+      choice = {...choice, provider: applied.provider, shadows: choice.shadows.filter(provider => provider !== applied.provider)};
       renderModelControls(connectedGame() || selectedGame());
       renderAdvancedSummary();
     },

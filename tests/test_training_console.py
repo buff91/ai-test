@@ -84,9 +84,22 @@ class FailureCollectionTests(unittest.TestCase):
         self.lab.training_apply("racer", "checkpoint-1")
         self.lab.training.activate.assert_called_once_with(self.game, "checkpoint-1")
 
+    def test_mlx_apply_switches_live_provider_and_rollback_scopes_runtime(self):
+        self.lab.training = Mock()
+        self.lab.training.activate.return_value = {"runtime": "laya-mlx", "checkpoint_id": "mlx-1"}
+        self.lab.options = {"provider": "laya", "shadows": ["laya-mlx", "jev"]}
+        result = self.lab.training_apply("racer", "mlx-1")
+        self.assertEqual(result["provider"], "laya-mlx")
+        self.assertEqual(self.lab.options["provider"], "laya-mlx")
+        self.assertEqual(self.lab.options["shadows"], ["jev"])
+        self.lab.training_rollback("racer", provider="laya-mlx")
+        self.lab.training.rollback.assert_called_once_with(self.game, provider="laya-mlx")
+        with self.assertRaises(ValueError):
+            self.lab.training_rollback("racer", provider="jev")
+
 
 class DeploymentInferenceTests(unittest.TestCase):
-    def test_evaluated_checkpoint_is_passed_to_next_laya_decider_only(self):
+    def test_each_runtime_uses_its_own_evaluated_checkpoint_for_next_decider(self):
         with tempfile.TemporaryDirectory() as root:
             lab = Lab(record=False, training_root=root)
             try:
@@ -97,12 +110,15 @@ class DeploymentInferenceTests(unittest.TestCase):
                 with patch("gamelab.decide.for_game", return_value=fake) as factory:
                     lab._prepare_decider(lab.generation, "laya", game, None, "live")
                     factory.assert_called_once_with("laya", game, None, checkpoint=checkpoint)
+                lab.training.active_checkpoint.assert_called_once_with(game, provider="laya")
                 lab.training.active_checkpoint.reset_mock()
                 fake.provider = "laya-mlx"
+                mlx_checkpoint = Path(root) / "racer" / "mlx-checkpoint"
+                lab.training.active_checkpoint.return_value = mlx_checkpoint
                 with patch("gamelab.decide.for_game", return_value=fake) as factory:
                     lab._prepare_decider(lab.generation, "laya-mlx", game, None, "live")
-                    factory.assert_called_once_with("laya-mlx", game, None, checkpoint=None)
-                lab.training.active_checkpoint.assert_not_called()
+                    factory.assert_called_once_with("laya-mlx", game, None, checkpoint=mlx_checkpoint)
+                lab.training.active_checkpoint.assert_called_once_with(game, provider="laya-mlx")
             finally:
                 lab.close()
 
@@ -121,6 +137,22 @@ class DeploymentInferenceTests(unittest.TestCase):
             self.assertEqual(answer["checkpoint"], str(Path(root).resolve()))
             self.assertEqual(answer["checkpoint_model"], "game-checkpoint")
             self.assertFalse(answer["checkpoint_cached"])
+
+    def test_mlx_custom_router_uses_converted_path_without_pytorch_import(self):
+        router = Mock(loaded=[])
+        router.predict.return_value = {"answers": {"action": {"choice": "brake"}},
+                                       "routing": {"model": "game-checkpoint"}}
+        factory = Mock(return_value=router)
+        with tempfile.TemporaryDirectory() as root, patch.dict(_ROUTERS, {}, clear=True), \
+                patch.dict("sys.modules", {"laya_mlx": SimpleNamespace(Router=factory), "laya": None}):
+            (Path(root) / "mlx_config.json").write_text(json.dumps({"format": "laya-mlx", "dtype": "float32"}))
+            questions = {"action": {"type": "choice", "criteria": {"brake": "Brake"}}}
+            model = Decider("laya-mlx", questions, checkpoint=root)
+            answer = model.decide("corner")
+            factory.assert_called_once_with(models={"game-checkpoint": str(Path(root).resolve())}, dtype="float32")
+            router.predict.assert_called_once_with("corner", questions, model="game-checkpoint")
+            self.assertEqual(answer["provider"], "laya-mlx")
+            self.assertEqual(answer["checkpoint"], str(Path(root).resolve()))
 
 
 class TrainingHttpTests(unittest.TestCase):
@@ -154,6 +186,16 @@ class TrainingHttpTests(unittest.TestCase):
                                    "key": "never-save-this", "path": "/outside"})
         self.assertEqual(reply, (200, {"id": "job-1"}))
         lab.training_train.assert_called_once_with("racer", {"epochs": 2}, "desktop-v1")
+
+    def test_mlx_conversion_and_rollback_routes_preserve_runtime_and_version(self):
+        lab, reply = self.request("POST", "/api/training/convert", {
+            "game": "racer", "version": "desktop-v1", "checkpoint_id": "laya-1", "dtype": "float16"})
+        self.assertEqual(reply[0], 200)
+        lab.training_convert.assert_called_once_with("racer", "laya-1", dtype="float16", version="desktop-v1")
+        lab, reply = self.request("POST", "/api/training/rollback", {
+            "game": "racer", "version": "desktop-v1", "provider": "laya-mlx"})
+        self.assertEqual(reply[0], 200)
+        lab.training_rollback.assert_called_once_with("racer", "desktop-v1", provider="laya-mlx")
 
 
 if __name__ == "__main__":

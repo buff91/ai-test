@@ -2,6 +2,17 @@
 .training-heading, .training-checkpoint-title { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
 .training-heading h2 { font-size: 25px; }
 .training-scope { margin: 15px 0 5px; color: #b9d2c3; font-size: 13px; line-height: 1.8; }
+.training-learning-guide { margin: 16px 0; padding: 12px 14px; border: 1px solid #415b4c; border-radius: 6px; background: #15251c; }
+.training-learning-guide summary { color: #d1ecda; font-weight: 600; }
+.training-learning-guide p, .training-learning-guide li { color: #b8d1c1; font-size: 12px; line-height: 1.85; }
+.training-learning-guide p { margin: 10px 0 0; }
+.training-learning-guide ol { margin: 9px 0; padding-left: 22px; }
+.training-learning-guide li + li { margin-top: 5px; }
+.training-active-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.training-active-grid > div { min-width: 0; }
+.training-active-grid .training-actions { margin-bottom: 8px; }
+.training-active-grid button { width: 100%; }
+.training-runtime { color: #b7dcc5; }
 .training-counts { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 18px 0; }
 .training-counts > div { min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 5px; background: #0f1922; }
 .training-counts small { display: block; font-size: 12px; color: var(--muted); }
@@ -40,4 +51,4 @@
 .training-job > div { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
 .training-job details { margin-top: 10px; }
 @media (max-width: 1100px) { .training-columns { grid-template-columns: 1fr; gap: 0; } }
-@media (max-width: 600px) { .laya-training { padding: 16px; } .training-heading { flex-wrap: wrap; } .training-counts { grid-template-columns: repeat(3, minmax(0, 1fr)); } .training-counts > div { padding: 10px; } .training-counts small { font-size: 11px; } .training-case-grid, .training-label-fields, .training-options { grid-template-columns: 1fr; } .training-checkpoint { padding: 11px; } .training-checkpoint-title { flex-wrap: wrap; } .training-actions button { flex: 1 1 auto; } }
+@media (max-width: 600px) { .laya-training { padding: 16px; } .training-heading { flex-wrap: wrap; } .training-counts { grid-template-columns: repeat(3, minmax(0, 1fr)); } .training-counts > div { padding: 10px; } .training-counts small { font-size: 11px; } .training-case-grid, .training-label-fields, .training-options, .training-active-grid { grid-template-columns: 1fr; } .training-checkpoint { padding: 11px; } .training-checkpoint-title { flex-wrap: wrap; } .training-actions button { flex: 1 1 auto; } }

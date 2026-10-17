@@ -14,6 +14,7 @@ import math
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -22,6 +23,8 @@ import uuid
 
 
 BASES = ("english", "multilingual", "typed-decisions")
+RUNTIMES = ("laya", "laya-mlx")
+MLX_DTYPES = ("float16", "float32", "bfloat16")
 _ID = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}\Z")
 _REPO = Path(__file__).resolve().parent.parent
 
@@ -51,6 +54,12 @@ def _compatibility(game, checkpoint):
 
 def _now():
     return time.time()
+
+
+def _runtime(value):
+    if value not in RUNTIMES:
+        raise ValueError("지원하지 않는 학습 런타임입니다: %s" % value)
+    return value
 
 
 def _write(path, value):
@@ -83,12 +92,18 @@ def _inside(root, path):
     return path.resolve()
 
 
-def checkpoint_fingerprint(path, *, trusted_base=False):
+def checkpoint_fingerprint(path, *, trusted_base=False, runtime="laya"):
     """Hash the exact loadable artifact, excluding optional training intermediates."""
     path = Path(path)
     if (path.is_symlink() and not trusted_base) or not path.is_dir():
         raise ValueError("체크포인트 폴더가 없습니다.")
     files = [path / "rl_agent_config.json", path / "model.safetensors"]
+    if _runtime(runtime) == "laya-mlx":
+        metadata = _read(path / "mlx_config.json")
+        if (not isinstance(metadata, dict) or metadata.get("format") != "laya-mlx" or metadata.get("format_version") != 1
+                or metadata.get("dtype") not in MLX_DTYPES or not isinstance(metadata.get("source"), str)):
+            raise ValueError("MLX 체크포인트 형식/정밀도 정보가 올바르지 않습니다.")
+        files.append(path / "mlx_config.json")
     for directory in ("encoder", "tokenizer"):
         folder = path / directory
         if (folder.is_symlink() and not trusted_base) or not folder.is_dir():
@@ -162,7 +177,24 @@ class TrainingManager:
             registry = _read(path) if path.exists() else {"jobs": [], "checkpoints": [], "active": None, "history": []}
             registry.setdefault("active_by_version", {})
             registry.setdefault("history_by_version", {})
+            active = registry.setdefault("active_by_runtime_version", {})
+            history = registry.setdefault("history_by_runtime_version", {})
+            for runtime in RUNTIMES:
+                active.setdefault(runtime, {})
+                history.setdefault(runtime, {})
+            for version, mapping in registry["active_by_version"].items():
+                active["laya"].setdefault(version, mapping)
+            for runtime in RUNTIMES:
+                for mapping in active[runtime].values():
+                    if mapping is not None:
+                        mapping.setdefault("runtime", runtime)
+            for version, mappings in registry["history_by_version"].items():
+                history["laya"].setdefault(version, mappings)
+            for checkpoint in registry["checkpoints"]:
+                checkpoint.setdefault("runtime", "laya")
             for job in registry["jobs"]:
+                related = next((c for c in registry["checkpoints"] if c["id"] == job.get("checkpoint_id")), {})
+                job.setdefault("runtime", related.get("runtime", "laya"))
                 if job["status"] in ("queued", "running"):
                     job.update(status="failed", error="콘솔 재시작으로 작업이 중단되었습니다.", finished_at=_now(), stage="interrupted")
             self._registries[game] = registry
@@ -215,10 +247,15 @@ class TrainingManager:
                 result = _read(run / "result.json")
                 if code or not result.get("ok"):
                     raise ValueError(result.get("error") or "worker 종료 코드 %s" % code)
-                if job["kind"] == "train":
+                if job["kind"] in ("train", "convert"):
                     checkpoint = result["checkpoint"]
+                    checkpoint.setdefault("runtime", "laya")
                     if checkpoint["id"] != job["checkpoint_id"] or checkpoint["run_id"] != job["run_id"]:
                         raise ValueError("체크포인트 작업 식별자가 일치하지 않습니다.")
+                    if checkpoint["runtime"] != job["runtime"]:
+                        raise ValueError("체크포인트 런타임이 작업과 다릅니다.")
+                    if job["kind"] == "convert" and checkpoint.get("source_checkpoint_id") != job["source_checkpoint_id"]:
+                        raise ValueError("변환 원본 체크포인트가 작업과 다릅니다.")
                     _inside(self._game_root(game), checkpoint["path"])
                     self._check_paths(game, checkpoint["snapshot"])
                     checkpoint.update(evaluation=None, activation_allowed=False, reasons=["독립 평가를 먼저 실행하세요."])
@@ -226,9 +263,14 @@ class TrainingManager:
                 else:
                     checkpoint = self._checkpoint(game, job["checkpoint_id"])
                     evaluation = result["evaluation"]
+                    runtime = checkpoint.get("runtime", "laya")
+                    if evaluation.get("runtime", "laya") != runtime:
+                        raise ValueError("평가 런타임이 체크포인트와 다릅니다.")
                     if (evaluation["artifact_hash"] != checkpoint["artifact_hash"] or evaluation["dataset_hash"] != checkpoint["dataset_hash"]
                             or evaluation["base_hash"] != checkpoint["base_hash"]):
                         raise ValueError("평가의 체크포인트/데이터 지문이 일치하지 않습니다.")
+                    if runtime == "laya-mlx" and evaluation.get("source_artifact_hash") != checkpoint["source_artifact_hash"]:
+                        raise ValueError("MLX 평가의 변환 원본 지문이 일치하지 않습니다.")
                     checkpoint.update(evaluation=evaluation,
                                       activation_allowed=evaluation["gate"]["allowed"], reasons=evaluation["gate"]["reasons"])
                 job.update(status="completed", stage="completed", progress=1, finished_at=_now())
@@ -242,7 +284,9 @@ class TrainingManager:
             registry = self._registry(game)
             # JSON copy prevents callers from mutating the promotion registry.
             result = json.loads(json.dumps({key: registry[key] for key in ("jobs", "checkpoints")}))
-            result["active"] = json.loads(json.dumps(registry["active_by_version"].get(_context(game)["version"])))
+            version = _context(game)["version"]
+            result["active_by_provider"] = json.loads(json.dumps({runtime: registry["active_by_runtime_version"][runtime].get(version) for runtime in RUNTIMES}))
+            result["active"] = result["active_by_provider"]["laya"]
             for checkpoint in result["checkpoints"]:
                 compatibility = _compatibility(game, checkpoint)
                 checkpoint["compatible"] = not compatibility
@@ -260,11 +304,14 @@ class TrainingManager:
         work_dir = _inside(self._game_root(game), work_dir)
         work_dir.mkdir(parents=True, exist_ok=True)
         job_id = kind + "-" + uuid.uuid4().hex[:16]
-        request = dict(request, kind=kind, game=_id(game), context=_context(game), checkpoint_id=checkpoint_id, run_id=run_id, work_dir=str(work_dir))
+        runtime = _runtime(request.get("runtime", request.get("checkpoint", {}).get("runtime", "laya")))
+        request = dict(request, kind=kind, runtime=runtime, game=_id(game), context=_context(game), checkpoint_id=checkpoint_id, run_id=run_id, work_dir=str(work_dir))
         _write(work_dir / "request.json", request)
-        job = {"id": job_id, "kind": kind, "status": "running", "stage": "starting", "progress": 0,
+        job = {"id": job_id, "kind": kind, "runtime": runtime, "status": "running", "stage": "starting", "progress": 0,
                "checkpoint_id": checkpoint_id, "run_id": run_id, "created_at": _now(),
                "finished_at": None, "error": None, "log_tail": [], "work_dir": str(work_dir)}
+        if kind == "convert":
+            job["source_checkpoint_id"] = request["source"]["id"]
         registry["jobs"].append(job)
         self._save(game)
         # Explicit allowlist: inherited provider/cloud/API credentials never reach workers.
@@ -310,17 +357,35 @@ class TrainingManager:
             work = self._game_root(game) / "runs" / checkpoint["run_id"] / ("eval-" + uuid.uuid4().hex[:12])
             return self._start(game, "evaluate", {"checkpoint": checkpoint}, checkpoint_id, checkpoint["run_id"], work)
 
-    def _model_hash(self, path, force=False, *, trusted_base=False):
+    def start_convert(self, game, checkpoint_id, dtype="float16"):
+        if dtype not in MLX_DTYPES:
+            raise ValueError("MLX dtype는 %s 중 하나여야 합니다." % ", ".join(MLX_DTYPES))
+        with self._lock:
+            self._refresh()
+            if self._closed or self._processes:
+                raise ValueError("실행 중인 학습/평가/변환 작업을 먼저 완료하세요.")
+            source = self._checkpoint(game, checkpoint_id)
+            if source.get("runtime", "laya") != "laya":
+                raise ValueError("학습한 PyTorch Laya 체크포인트만 MLX로 변환할 수 있습니다.")
+            self._verify_checkpoint(game, source, force=True)
+            checkpoint_id = "mlx-" + uuid.uuid4().hex[:16]
+            work = self._game_root(game) / "runs" / source["run_id"] / ("convert-" + uuid.uuid4().hex[:12])
+            return self._start(game, "convert", {"source": source, "dtype": dtype, "runtime": "laya-mlx"},
+                               checkpoint_id, source["run_id"], work)
+
+    def _model_hash(self, path, force=False, *, trusted_base=False, runtime="laya"):
         path = Path(path)
         relevant = [path / "rl_agent_config.json", path / "model.safetensors"]
+        if _runtime(runtime) == "laya-mlx":
+            relevant.append(path / "mlx_config.json")
         relevant.extend(p for name in ("encoder", "tokenizer") for p in sorted((path / name).rglob("*")))
         signature = tuple((str(p.relative_to(path)), p.lstat().st_mode, p.lstat().st_ino,
                            p.stat().st_ino, p.stat().st_size, p.stat().st_mtime_ns, p.stat().st_ctime_ns) for p in relevant)
-        cache_key = (str(path), trusted_base)
+        cache_key = (str(path), trusted_base, runtime)
         cached = self._hash_cache.get(cache_key)
         if not force and cached and cached[0] == signature:
             return cached[1]
-        value = checkpoint_fingerprint(path, trusted_base=trusted_base)
+        value = checkpoint_fingerprint(path, trusted_base=trusted_base, runtime=runtime)
         self._hash_cache[cache_key] = (signature, value)
         return value
 
@@ -328,14 +393,24 @@ class TrainingManager:
         reasons = _compatibility(game, checkpoint)
         if reasons:
             raise ValueError(" ".join(reasons))
+        runtime = _runtime(checkpoint.get("runtime", "laya"))
         _inside(self._game_root(game), checkpoint["path"])
         self._check_paths(game, checkpoint["snapshot"])
         if dataset_fingerprints(checkpoint["snapshot"]) != checkpoint["dataset_fingerprints"]:
             raise ValueError("고정한 데이터셋이 변경되었습니다. 새 학습을 실행하세요.")
-        if self._model_hash(checkpoint["path"], force) != checkpoint["artifact_hash"]:
+        if self._model_hash(checkpoint["path"], force, runtime=runtime) != checkpoint["artifact_hash"]:
             raise ValueError("체크포인트 파일이 변경되었습니다. 다시 학습하세요.")
         if self._model_hash(checkpoint["base_path"], force, trusted_base=True) != checkpoint["base_hash"]:
             raise ValueError("원본 기본 체크포인트 파일이 변경되었습니다.")
+        if runtime == "laya-mlx":
+            source = self._checkpoint(game, checkpoint["source_checkpoint_id"])
+            if (source.get("runtime", "laya") != "laya" or source["path"] != checkpoint["source_path"]
+                    or source["artifact_hash"] != checkpoint["source_artifact_hash"]
+                    or source["dataset_hash"] != checkpoint["dataset_hash"] or source["base_hash"] != checkpoint["base_hash"]
+                    or source["dataset_fingerprints"] != checkpoint["dataset_fingerprints"]):
+                raise ValueError("MLX 체크포인트의 변환 원본 기록이 변경되었습니다.")
+            self._verify_checkpoint(game, source, force=force)
+            _check_mlx_metadata(checkpoint)
 
     def activate(self, game, checkpoint_id):
         with self._lock:
@@ -343,37 +418,54 @@ class TrainingManager:
             registry = self._registry(game)
             checkpoint = self._checkpoint(game, checkpoint_id)
             evaluation = checkpoint.get("evaluation")
+            runtime = _runtime(checkpoint.get("runtime", "laya"))
             if not evaluation or not promotion_gate(evaluation)["allowed"]:
                 raise ValueError("적용 조건을 통과한 독립 평가가 필요합니다.")
+            if evaluation.get("runtime", "laya") != runtime:
+                raise ValueError("이 런타임에서 별도로 평가한 결과가 필요합니다.")
             self._verify_checkpoint(game, checkpoint, force=True)
             if (evaluation["artifact_hash"] != checkpoint["artifact_hash"] or evaluation["dataset_hash"] != checkpoint["dataset_hash"]
                     or evaluation["base_hash"] != checkpoint["base_hash"]):
                 raise ValueError("평가 지문이 변경되었습니다.")
+            if runtime == "laya-mlx" and evaluation.get("source_artifact_hash") != checkpoint["source_artifact_hash"]:
+                raise ValueError("MLX 평가의 변환 원본 지문이 변경되었습니다.")
             version = _context(game)["version"]
-            current = registry["active_by_version"].get(version)
+            mappings = registry["active_by_runtime_version"][runtime]
+            current = mappings.get(version)
             if current and current["checkpoint_id"] == checkpoint_id:
                 return json.loads(json.dumps(current))
-            registry["history_by_version"].setdefault(version, []).append(current)
-            active = {"checkpoint_id": checkpoint_id, "path": checkpoint["path"], "version": version, "activated_at": _now()}
-            registry["active_by_version"][version] = active
+            registry["history_by_runtime_version"][runtime].setdefault(version, []).append(current)
+            active = {"checkpoint_id": checkpoint_id, "path": checkpoint["path"], "runtime": runtime,
+                      "version": version, "activated_at": _now()}
+            if runtime == "laya-mlx":
+                active["dtype"] = checkpoint["dtype"]
+            mappings[version] = active
+            if runtime == "laya":
+                registry["active_by_version"][version] = active
             self._save(game)
             return json.loads(json.dumps(active))
 
-    def rollback(self, game):
+    def rollback(self, game, provider="laya"):
+        provider = _runtime(provider)
         with self._lock:
             self._refresh()
             registry = self._registry(game)
             version = _context(game)["version"]
-            registry["active_by_version"][version] = None
+            registry["active_by_runtime_version"][provider][version] = None
+            if provider == "laya":
+                registry["active_by_version"][version] = None
             self._save(game)
-            return {"active": None, "rolled_back": True}
+            return {"active": None, "runtime": provider, "rolled_back": True}
 
-    def active_checkpoint(self, game):
+    def active_checkpoint(self, game, provider="laya"):
+        provider = _runtime(provider)
         with self._lock:
-            active = self._registry(game)["active_by_version"].get(_context(game)["version"])
+            active = self._registry(game)["active_by_runtime_version"][provider].get(_context(game)["version"])
             if not active:
                 return None
             checkpoint = self._checkpoint(game, active["checkpoint_id"])
+            if checkpoint.get("runtime", "laya") != provider:
+                raise ValueError("적용한 체크포인트 런타임이 다릅니다.")
             self._verify_checkpoint(game, checkpoint)
             return Path(checkpoint["path"])
 
@@ -568,8 +660,81 @@ def _prepare_checkpoint(path):
     _fix_tokenizer_config(str(path))
 
 
+def _check_mlx_metadata(checkpoint):
+    metadata = _read(Path(checkpoint["path"]) / "mlx_config.json")
+    if (not isinstance(metadata, dict) or metadata.get("dtype") != checkpoint.get("dtype") or checkpoint.get("dtype") not in MLX_DTYPES
+            or not isinstance(metadata.get("source"), str)
+            or Path(metadata["source"]).resolve() != Path(checkpoint["source_path"]).resolve()):
+        raise ValueError("MLX 변환 메타데이터의 원본/정밀도가 기록과 다릅니다.")
+
+
+def _verify_worker_inputs(checkpoint):
+    runtime = _runtime(checkpoint.get("runtime", "laya"))
+    if dataset_fingerprints(checkpoint["snapshot"]) != checkpoint["dataset_fingerprints"]:
+        raise ValueError("고정 데이터셋 지문이 변경되었습니다.")
+    if checkpoint_fingerprint(checkpoint["path"], runtime=runtime) != checkpoint["artifact_hash"]:
+        raise ValueError("대상 체크포인트 지문이 변경되었습니다.")
+    if checkpoint_fingerprint(checkpoint["base_path"], trusted_base=True) != checkpoint["base_hash"]:
+        raise ValueError("기본 체크포인트 지문이 변경되었습니다.")
+    if runtime == "laya-mlx":
+        _check_mlx_metadata(checkpoint)
+        if checkpoint_fingerprint(checkpoint["source_path"]) != checkpoint["source_artifact_hash"]:
+            raise ValueError("MLX 변환 원본 체크포인트 지문이 변경되었습니다.")
+
+
+def _release_runtime(runtime):
+    gc.collect()
+    if runtime == "laya-mlx":
+        import mlx.core as mx
+        mx.clear_cache()
+    else:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        if hasattr(torch, "mps") and torch.backends.mps.is_available():
+            torch.mps.empty_cache()
+
+
+def _convert_worker(request, work):
+    source = request["source"]
+    dtype = request.get("dtype", "float16")
+    if source.get("runtime", "laya") != "laya" or dtype not in MLX_DTYPES:
+        raise ValueError("지원하는 PyTorch 체크포인트/MLX 정밀도가 아닙니다.")
+    held_out_rows(source["snapshot"])
+    _verify_worker_inputs(source)
+    output = work / "checkpoint"
+    if output.exists() or output.is_symlink():
+        raise FileExistsError("변환 출력 경로가 이미 있습니다.")
+    _progress(work, "MLX 변환 중", .1)
+    try:
+        from laya_mlx.convert import convert
+        convert(source["path"], output, dtype=dtype)
+        checkpoint = {key: source[key] for key in ("game", "version", "schema_hash", "base", "base_path", "base_hash",
+                      "dataset_hash", "snapshot", "dataset_fingerprints")}
+        checkpoint.update(id=request["checkpoint_id"], run_id=request["run_id"], runtime="laya-mlx", dtype=dtype,
+                          path=str(output.resolve()), source_checkpoint_id=source["id"], source_path=source["path"],
+                          source_artifact_hash=source["artifact_hash"], created_at=_now())
+        _check_mlx_metadata(checkpoint)
+        checkpoint["artifact_hash"] = checkpoint_fingerprint(output, runtime="laya-mlx")
+        _verify_worker_inputs(source)
+        _verify_worker_inputs(checkpoint)
+        _write(work / "checkpoint-manifest.json", checkpoint)
+        _progress(work, "MLX 변환 완료 · 별도 평가 필요", 1)
+        return {"ok": True, "checkpoint": checkpoint}
+    except BaseException:
+        # This destination was absent above and belongs to this conversion only.
+        # Preserve the source checkpoint, dataset, request and failure log.
+        if output.is_symlink():
+            output.unlink()
+        elif output.exists():
+            shutil.rmtree(output)
+        raise
+
+
 def run_worker(request):
     work = Path(request["work_dir"])
+    if request["kind"] == "convert":
+        return _convert_worker(request, work)
     if request["kind"] == "train":
         from laya.train import TrainConfig, finetune, resolve_checkpoint_dir
         options = validate_options(request["options"])
@@ -592,7 +757,7 @@ def run_worker(request):
         artifact_hash = checkpoint_fingerprint(output)
         if checkpoint_fingerprint(base_path, trusted_base=True) != base_hash or dataset_fingerprints(snapshot) != request["dataset_fingerprints"]:
             raise ValueError("학습 중 기본 모델 또는 데이터셋이 변경되었습니다.")
-        checkpoint = {"id": request["checkpoint_id"], "run_id": request["run_id"], "game": request["game"],
+        checkpoint = {"id": request["checkpoint_id"], "runtime": "laya", "run_id": request["run_id"], "game": request["game"],
                       "path": str(output.resolve()), "version": request["context"]["version"], "schema_hash": request["context"]["schema_hash"],
                       "base": options["base"], "base_path": str(Path(base_path).resolve()),
                       "base_hash": base_hash, "artifact_hash": artifact_hash, "dataset_hash": snapshot["dataset_hash"],
@@ -603,35 +768,30 @@ def run_worker(request):
         return {"ok": True, "checkpoint": checkpoint}
     if request["kind"] != "evaluate":
         raise ValueError("지원하지 않는 작업입니다.")
-    import laya
     checkpoint = request["checkpoint"]
+    runtime = _runtime(checkpoint.get("runtime", "laya"))
+    if runtime == "laya-mlx":
+        import laya_mlx
+        load = lambda path: laya_mlx.load(path, dtype=checkpoint["dtype"])
+    else:
+        import laya
+        load = laya.load
     snapshot = checkpoint["snapshot"]
     rows = held_out_rows(snapshot)
-    if dataset_fingerprints(snapshot) != checkpoint["dataset_fingerprints"]:
-        raise ValueError("데이터셋 지문이 변경되었습니다.")
-    for path, fingerprint, trusted in ((checkpoint["path"], checkpoint["artifact_hash"], False), (checkpoint["base_path"], checkpoint["base_hash"], True)):
-        if checkpoint_fingerprint(path, trusted_base=trusted) != fingerprint:
-            raise ValueError("평가 대상 모델의 지문이 변경되었습니다.")
+    _verify_worker_inputs(checkpoint)
     results = []
     for offset, (name, path) in enumerate((("기본 모델 평가", checkpoint["base_path"]), ("새 모델 평가", checkpoint["path"]))):
         _progress(work, name + " 준비", offset * .5)
-        agent = laya.load(path)
+        agent = load(path)
         results.append(evaluate_agent(agent, rows, lambda n, total: _progress(work, "%s %d/%d" % (name, n, total), offset * .5 + n / total * .5)))
         del agent
-        gc.collect()
-        # Release accelerator allocations before loading the second full model.
-        import torch
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        if hasattr(torch, "mps") and torch.backends.mps.is_available():
-            torch.mps.empty_cache()
-    if dataset_fingerprints(snapshot) != checkpoint["dataset_fingerprints"]:
-        raise ValueError("평가 중 데이터셋이 변경되었습니다.")
-    if checkpoint_fingerprint(checkpoint["path"]) != checkpoint["artifact_hash"] or checkpoint_fingerprint(checkpoint["base_path"], trusted_base=True) != checkpoint["base_hash"]:
-        raise ValueError("평가 중 모델이 변경되었습니다.")
+        _release_runtime(runtime)
+    _verify_worker_inputs(checkpoint)
     evaluation = {"before": results[0], "after": results[1], "held_out": True, "eval_count": len(rows),
                   "artifact_hash": checkpoint["artifact_hash"], "base_hash": checkpoint["base_hash"],
-                  "dataset_hash": checkpoint["dataset_hash"], "evaluated_at": _now()}
+                  "dataset_hash": checkpoint["dataset_hash"], "runtime": runtime, "evaluated_at": _now()}
+    if runtime == "laya-mlx":
+        evaluation.update(dtype=checkpoint["dtype"], source_artifact_hash=checkpoint["source_artifact_hash"])
     evaluation["gate"] = promotion_gate(evaluation)
     return {"ok": True, "evaluation": evaluation}
 

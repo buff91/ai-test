@@ -111,8 +111,10 @@ def make_handler(lab):
                                                                "freeze_encoder", "micro_batch", "grad_accum") if k in data},
                         data.get("version")),
                     "/api/training/evaluate": lambda: lab.training_evaluate(data.get("game"), data.get("checkpoint_id"), data.get("version")),
+                    "/api/training/convert": lambda: lab.training_convert(data.get("game"), data.get("checkpoint_id"),
+                                                                         dtype=data.get("dtype", "float16"), version=data.get("version")),
                     "/api/training/apply": lambda: lab.training_apply(data.get("game"), data.get("checkpoint_id"), data.get("version")),
-                    "/api/training/rollback": lambda: lab.training_rollback(data.get("game"), data.get("version")),
+                    "/api/training/rollback": lambda: lab.training_rollback(data.get("game"), data.get("version"), provider=data.get("provider", "laya")),
                 }
                 if path not in routes:
                     self._send(404, {"error": "Not found"})
