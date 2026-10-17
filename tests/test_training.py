@@ -188,8 +188,41 @@ class TrainingManagerTests(unittest.TestCase):
         changed_schema.questions["action"]["criteria"]["wait"] = "Wait"
         with self.assertRaises(ValueError):
             self.manager.active_checkpoint(changed_schema)
+        reordered = game()
+        reordered.questions["action"]["criteria"] = {"stop": "Stop", "go": "Go"}
+        with self.assertRaises(ValueError):
+            self.manager.active_checkpoint(reordered)
         with self.assertRaises(LookupError):
             self.manager.activate(SimpleNamespace(id="party", version="v1", questions=QUESTIONS), checkpoint["id"])
+
+    def test_rollback_restores_builtin_after_switching_between_two_custom_checkpoints(self):
+        first = self.train()
+        self.evaluate(first)
+        self.manager.activate(self.game, first["id"])
+        second = self.train()
+        self.evaluate(second)
+        self.manager.activate(self.game, second["id"])
+        self.assertEqual(self.manager.active_checkpoint(self.game), Path(second["path"]))
+        self.assertIsNone(self.manager.rollback(self.game)["active"])
+        self.assertIsNone(self.manager.active_checkpoint(self.game))
+
+    def test_huggingface_base_symlinks_hash_target_bytes_but_candidates_reject_links(self):
+        checkpoint = self.train()
+        base = Path(checkpoint["base_path"])
+        weight = base / "model.safetensors"
+        blob = self.root / "blobs" / "weight-blob"
+        blob.parent.mkdir()
+        weight.replace(blob)
+        weight.symlink_to(blob)
+        self.assertEqual(checkpoint_fingerprint(base, trusted_base=True), checkpoint["base_hash"])
+        with self.assertRaises(ValueError):
+            checkpoint_fingerprint(base)
+        self.evaluate(checkpoint)
+        self.manager.activate(self.game, checkpoint["id"])
+        self.assertEqual(self.manager.active_checkpoint(self.game), Path(checkpoint["path"]))
+        blob.write_bytes(b"mutated source weights")
+        with self.assertRaises(ValueError):
+            self.manager.active_checkpoint(self.game)
 
     def test_restart_and_process_exit_leave_failed_jobs_not_phantom_checkpoints(self):
         self.manager.start_train(self.game, {})

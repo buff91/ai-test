@@ -36,7 +36,7 @@ def _id(value):
 def _context(game):
     questions = getattr(game, "questions", None)
     return {"game": _id(game), "version": getattr(game, "version", "default"),
-            "schema_hash": hashlib.sha256(json.dumps(questions, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest() if questions is not None else None}
+            "schema_hash": hashlib.sha256(json.dumps(questions, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode()).hexdigest() if questions is not None else None}
 
 
 def _compatibility(game, checkpoint):
@@ -65,9 +65,9 @@ def _read(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
-def _digest(path):
+def _digest(path, *, trusted_base=False):
     path = Path(path)
-    if path.is_symlink() or not path.is_file():
+    if (path.is_symlink() and not trusted_base) or not path.is_file():
         raise ValueError("일반 파일만 사용할 수 있습니다: %s" % path.name)
     sha = hashlib.sha256()
     with path.open("rb") as stream:
@@ -83,18 +83,18 @@ def _inside(root, path):
     return path.resolve()
 
 
-def checkpoint_fingerprint(path):
+def checkpoint_fingerprint(path, *, trusted_base=False):
     """Hash the exact loadable artifact, excluding optional training intermediates."""
     path = Path(path)
-    if path.is_symlink() or not path.is_dir():
+    if (path.is_symlink() and not trusted_base) or not path.is_dir():
         raise ValueError("체크포인트 폴더가 없습니다.")
     files = [path / "rl_agent_config.json", path / "model.safetensors"]
     for directory in ("encoder", "tokenizer"):
         folder = path / directory
-        if folder.is_symlink() or not folder.is_dir():
+        if (folder.is_symlink() and not trusted_base) or not folder.is_dir():
             raise ValueError("체크포인트에 %s 폴더가 없습니다." % directory)
         children = sorted(folder.rglob("*"))
-        if any(p.is_symlink() for p in children):
+        if not trusted_base and any(p.is_symlink() for p in children):
             raise ValueError("체크포인트 심볼릭 링크는 사용할 수 없습니다.")
         files.extend(p for p in children if p.is_file())
         if not any(p.is_file() for p in children):
@@ -102,7 +102,7 @@ def checkpoint_fingerprint(path):
     config = _read(files[0])
     if not isinstance(config, dict) or files[1].stat().st_size == 0:
         raise ValueError("체크포인트 설정/가중치가 올바르지 않습니다.")
-    values = {p.relative_to(path).as_posix(): _digest(p) for p in files}
+    values = {p.relative_to(path).as_posix(): _digest(p, trusted_base=trusted_base) for p in files}
     return hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest()
 
 
@@ -306,17 +306,18 @@ class TrainingManager:
             work = self._game_root(game) / "runs" / checkpoint["run_id"] / ("eval-" + uuid.uuid4().hex[:12])
             return self._start(game, "evaluate", {"checkpoint": checkpoint}, checkpoint_id, checkpoint["run_id"], work)
 
-    def _model_hash(self, path, force=False):
+    def _model_hash(self, path, force=False, *, trusted_base=False):
         path = Path(path)
         relevant = [path / "rl_agent_config.json", path / "model.safetensors"]
         relevant.extend(p for name in ("encoder", "tokenizer") for p in sorted((path / name).rglob("*")))
-        signature = tuple((str(p.relative_to(path)), p.lstat().st_mode, p.lstat().st_ino, p.lstat().st_size,
-                           p.lstat().st_mtime_ns, p.lstat().st_ctime_ns) for p in relevant)
-        cached = self._hash_cache.get(str(path))
+        signature = tuple((str(p.relative_to(path)), p.lstat().st_mode, p.lstat().st_ino,
+                           p.stat().st_ino, p.stat().st_size, p.stat().st_mtime_ns, p.stat().st_ctime_ns) for p in relevant)
+        cache_key = (str(path), trusted_base)
+        cached = self._hash_cache.get(cache_key)
         if not force and cached and cached[0] == signature:
             return cached[1]
-        value = checkpoint_fingerprint(path)
-        self._hash_cache[str(path)] = (signature, value)
+        value = checkpoint_fingerprint(path, trusted_base=trusted_base)
+        self._hash_cache[cache_key] = (signature, value)
         return value
 
     def _verify_checkpoint(self, game, checkpoint, *, force=False):
@@ -329,7 +330,7 @@ class TrainingManager:
             raise ValueError("고정한 데이터셋이 변경되었습니다. 새 학습을 실행하세요.")
         if self._model_hash(checkpoint["path"], force) != checkpoint["artifact_hash"]:
             raise ValueError("체크포인트 파일이 변경되었습니다. 다시 학습하세요.")
-        if self._model_hash(checkpoint["base_path"], force) != checkpoint["base_hash"]:
+        if self._model_hash(checkpoint["base_path"], force, trusted_base=True) != checkpoint["base_hash"]:
             raise ValueError("원본 기본 체크포인트 파일이 변경되었습니다.")
 
     def activate(self, game, checkpoint_id):
@@ -358,18 +359,9 @@ class TrainingManager:
             self._refresh()
             registry = self._registry(game)
             version = _context(game)["version"]
-            history = registry["history_by_version"].setdefault(version, [])
-            previous = history[-1] if history else None
-            if previous:
-                checkpoint = self._checkpoint(game, previous["checkpoint_id"])
-                self._verify_checkpoint(game, checkpoint, force=True)
-                if not checkpoint.get("evaluation") or not promotion_gate(checkpoint["evaluation"])["allowed"]:
-                    raise ValueError("이전 체크포인트가 적용 조건을 통과하지 못했습니다.")
-            registry["active_by_version"][version] = previous
-            if history:
-                history.pop()
+            registry["active_by_version"][version] = None
             self._save(game)
-            return {"active": json.loads(json.dumps(previous)), "rolled_back": True}
+            return {"active": None, "rolled_back": True}
 
     def active_checkpoint(self, game):
         with self._lock:
@@ -565,7 +557,7 @@ def run_worker(request):
             raise ValueError("고정 데이터셋이 변경되었습니다.")
         _progress(work, "기본 체크포인트 준비", .02)
         base_path = resolve_checkpoint_dir(options["base"])
-        base_hash = checkpoint_fingerprint(base_path)
+        base_hash = checkpoint_fingerprint(base_path, trusted_base=True)
         output = work.parent / "checkpoint"
         _progress(work, "학습 중", .05)
         config = TrainConfig(**{key: value for key, value in options.items() if key != "base"},
@@ -574,7 +566,7 @@ def run_worker(request):
         if not summary.get("train_report", {}).get("is_held_out") or not summary.get("eval_items", 0):
             raise ValueError("토큰화 후 학습/평가 입력이 겹치거나 평가 사례를 사용할 수 없습니다.")
         artifact_hash = checkpoint_fingerprint(output)
-        if checkpoint_fingerprint(base_path) != base_hash or dataset_fingerprints(snapshot) != request["dataset_fingerprints"]:
+        if checkpoint_fingerprint(base_path, trusted_base=True) != base_hash or dataset_fingerprints(snapshot) != request["dataset_fingerprints"]:
             raise ValueError("학습 중 기본 모델 또는 데이터셋이 변경되었습니다.")
         checkpoint = {"id": request["checkpoint_id"], "run_id": request["run_id"], "game": request["game"],
                       "path": str(output.resolve()), "version": request["context"]["version"], "schema_hash": request["context"]["schema_hash"],
@@ -593,8 +585,8 @@ def run_worker(request):
     rows = held_out_rows(snapshot)
     if dataset_fingerprints(snapshot) != checkpoint["dataset_fingerprints"]:
         raise ValueError("데이터셋 지문이 변경되었습니다.")
-    for path, fingerprint in ((checkpoint["path"], checkpoint["artifact_hash"]), (checkpoint["base_path"], checkpoint["base_hash"])):
-        if checkpoint_fingerprint(path) != fingerprint:
+    for path, fingerprint, trusted in ((checkpoint["path"], checkpoint["artifact_hash"], False), (checkpoint["base_path"], checkpoint["base_hash"], True)):
+        if checkpoint_fingerprint(path, trusted_base=trusted) != fingerprint:
             raise ValueError("평가 대상 모델의 지문이 변경되었습니다.")
     results = []
     for offset, (name, path) in enumerate((("기본 모델 평가", checkpoint["base_path"]), ("새 모델 평가", checkpoint["path"]))):
@@ -611,7 +603,7 @@ def run_worker(request):
             torch.mps.empty_cache()
     if dataset_fingerprints(snapshot) != checkpoint["dataset_fingerprints"]:
         raise ValueError("평가 중 데이터셋이 변경되었습니다.")
-    if checkpoint_fingerprint(checkpoint["path"]) != checkpoint["artifact_hash"] or checkpoint_fingerprint(checkpoint["base_path"]) != checkpoint["base_hash"]:
+    if checkpoint_fingerprint(checkpoint["path"]) != checkpoint["artifact_hash"] or checkpoint_fingerprint(checkpoint["base_path"], trusted_base=True) != checkpoint["base_hash"]:
         raise ValueError("평가 중 모델이 변경되었습니다.")
     evaluation = {"before": results[0], "after": results[1], "held_out": True, "eval_count": len(rows),
                   "artifact_hash": checkpoint["artifact_hash"], "base_hash": checkpoint["base_hash"],
