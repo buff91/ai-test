@@ -470,3 +470,12 @@ HTTP API나 로그 파일처럼 다른 방식으로 상태를 얻는 게임은 c
 - [Laya 설치 및 `Router.predict` 예제](https://github.com/NandhaKishorM/laya)
 - [Laya-MLX 설치 및 `Router.predict` 예제](https://github.com/mizorewww/laya-mlx)
 
+## Git 관리 범위
+
+이 저장소에는 프로젝트 소스, 게임 설정, 테스트, 실행 가능한 연동 예제와 설치·실행·구조·개발 문서를 관리합니다. 강의 슬라이드, 교안, 워크북, 강의자료 생성 스크립트·이미지·폰트는 로컬에만 보관하고 Git에 올리지 않습니다.
+
+- `docs/teaching/`: 강의자료 원본과 제작 자산
+- `docs/archive/`: 이전 문서의 로컬 보관본
+- `output/`, `tmp/pdfs/`: PDF, 캡처, 검증 로그와 임시 생성물
+
+위 경로는 `.gitignore`로 제외합니다. 프로젝트 문서는 강의 진행안이나 개인 작업 기록 대신 재현 가능한 사용법과 구현 정보를 설명합니다. 공유할 검증 결과는 필요한 조건·방법·결과를 프로젝트 문서에 요약합니다.

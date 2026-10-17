@@ -7,3 +7,12 @@ results/
 build/
 dist/
 *.spec
+.DS_Store
+tmp/pdfs/
+
+# Local teaching materials and document snapshots
+/docs/teaching/
+/docs/archive/
+
+# Generated documents, captures, validation logs, and build artifacts
+/output/
