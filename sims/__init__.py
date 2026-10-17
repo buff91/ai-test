@@ -1,12 +1,6 @@
-"""Simulation games served over the socket connector, each with its own truth (see sims/base.py)."""
-
-from sims.arena import ArenaSim
-from sims.cards import CardSim
+"""The three teaching games and their socket-service registry."""
 from sims.party import PartySim
 from sims.racer import RacerSim
-from sims.shooter import ShooterSim
-from sims.swarm import SwarmSim
+from sims.moba import MobaSim
 
-
-SIMS = {"arena": ArenaSim, "cards": CardSim, "party": PartySim,
-        "shooter": ShooterSim, "swarm": SwarmSim, "racer": RacerSim}
+SIMS = {"party": PartySim, "racer": RacerSim, "moba": MobaSim}

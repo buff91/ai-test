@@ -1,0 +1,17 @@
+{
+  "connector": "socket",
+  "display": "headless",
+  "socket": "/tmp/moba.sock",
+  "interval_ms": 300,
+  "actions": {
+    "advance": "advance",
+    "retreat": "retreat",
+    "attack": "attack",
+    "skill": "skill",
+    "recall": "recall",
+    "lane_left": "lane_left",
+    "lane_right": "lane_right",
+    "wait": "wait"
+  },
+  "manual": "python -m sims serve moba --socket /tmp/moba.sock 로 시뮬레이션을 실행한 뒤 연결하세요."
+}

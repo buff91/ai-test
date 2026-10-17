@@ -10,9 +10,8 @@ dist/
 .DS_Store
 tmp/pdfs/
 
-# Local teaching materials and document snapshots
+# Local teaching materials
 /docs/teaching/
-/docs/archive/
 
 # Generated documents, captures, validation logs, and build artifacts
 /output/

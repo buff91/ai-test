@@ -1,0 +1,13 @@
+{
+  "connector": "socket",
+  "display": "headless",
+  "manual": "browser 의존성과 Chromium이 필요합니다. 화면을 띄우지 않고 실제 브라우저 DOM을 읽고 조작합니다.",
+  "launch": {
+    "command": ["{python}", "-m", "examples.external_control.browser_bridge", "--headless"],
+    "ready_timeout": 30,
+    "build_hint": "uv sync --group browser 후 python -m playwright install chromium을 실행하세요.",
+    "sources": ["examples/external_control/browser_bridge.py", "examples/external_control/demo.html"]
+  },
+  "interval_ms": 500,
+  "actions": {"increase": "increase", "decrease": "decrease", "confirm": "confirm", "wait": "wait"}
+}

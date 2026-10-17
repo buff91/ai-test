@@ -1,131 +1,19 @@
-# 게임
+# 게임 패키지
 
-게임 하나 = 폴더 하나이고, 폴더 이름이 게임 이름입니다. 게임 자체(무엇을 판단하는지)와 인터페이스(어떻게 연결하는지)를 나눠 둡니다.
+기본 목록에는 `party`(턴제 RPG), `racer`(레이싱), `moba`(MOBA)만 있습니다. 각 폴더는 아래 형식을 공유합니다.
 
 ```text
-games/<게임>/
-  game.json                       이름, 타입, 기본 인터페이스, policy
-  questions.json                  모델에게 보낼 Choice·Score·Noul 질문
-  cases.json                      비교용 상태와 질문별 정답(truth)
-  interfaces/<이름>/interface.json  연결 방법 (connector: kbm 또는 socket)
-  interfaces/<이름>/observer.py     kbm은 필수, socket은 선택
-  view.js                         (선택) WebView 콘솔에 그릴 이 게임의 상태판
+game.json                    이름, 타입, 정책, 버전별 인터페이스
+questions.json               모델에 전달하는 choice / score / noul 질문
+cases.json                   오프라인 비교용 상태와 선택적 truth
+view.js                      콘솔 상태 도식 (실제 게임 화면과 구분)
+interfaces/<name>/
+  interface.json             connector, 실행/attach, 행동 매핑, 입력 설정
+  observer.py                화면 해석 또는 상태 설명 변환 (선택)
 ```
 
-지금 있는 여섯 게임(`arena`, `cards`, `party`, `shooter`, `swarm`, `racer`)은 [sims/](../sims/)의 시뮬레이션이고, 매 상태의 정답을 게임이 직접 계산해 보냅니다. 게임별 설정과 "무엇을 바꾸려면 어디를 고치나"는 [docs/games-guide.md](../docs/games-guide.md)를 보세요. 이 문서는 파일 형식 참고용입니다.
+`questions.json`의 `action.criteria` 키와 각 인터페이스 `actions` 키가 일치해야 합니다. `socket`/`mod`는 문자열 또는 구조화 명령으로, `kbm`은 입력 단계 목록으로 매핑합니다. `game.json`의 버전은 같은 인터페이스의 주소·표시 방식 등을 덮어쓸 수 있습니다.
 
-```sh
-uv run python play.py new mygame --type realtime.action    # 비교 전용으로 시작
-uv run python play.py add-interface mygame kbm             # 화면 + 키보드·마우스
-uv run python play.py add-interface mygame socket          # 테스트 훅
-uv run python play.py run mygame --interface socket        # 인터페이스 골라 실행
-```
+세 내장 게임은 `sim-v1`(화면 없이 검증)과 `desktop-v1`(실제 게임 창)을 제공합니다. `app`은 게임을 실행하는 socket 프로필, `attach`는 이미 실행 중인 게임의 socket, `kbm`은 화면 관찰과 키마 입력입니다. 기본 CLI 버전은 sim-v1이고 강의 콘솔은 게임 창을 우선 선택합니다.
 
-## game.json
-
-```json
-{"name": "Arena · 포탑 돌파 (턴제 전술)", "type": "turn.tactics", "interface": "socket",
- "policy": {"guards": [{"name": "피격 직전", "when": "incoming_attack >= 0.7", "allow": ["dodge", "retreat", "attack"]}]}}
-```
-
-- `name`: 목록에 보일 이름
-- `type` (필수): `config/game_types.json`의 타입. 어떤 모델이 플레이하고(live) 어떤 모델이 옆에서 비교만 할지(shadow) 정함. `uv run python play.py types`로 목록 확인
-- `interface`: `--interface`를 안 줄 때 쓸 인터페이스. 인터페이스가 하나뿐이면 생략 가능
-- `providers` (선택): 이 게임만 타입의 모델 매핑과 다르게 할 때. 적은 값만 덮어씀
-- `policy` (선택): Score·Noul 답으로 행동을 제어하는 규칙. 기본은 기록만 하고 `run --policy`일 때 적용
-
-```json
-"providers": {"live": "laya-mlx", "shadow": ["jev"], "models": {"laya-mlx": "english"}}
-```
-
-### policy
-
-| 키 | 형식 | 하는 일 |
-|---|---|---|
-| `guards[].when` | `"질문id >= 숫자"` (`>=`, `<=`, `>`, `<`) | score나 noul 질문의 답에 대한 조건 |
-| `guards[].allow` | 선택지 목록 | 조건이 맞을 때 허용할 행동. 고른 행동이 없으면 이 중 모델이 가장 높게 본 것으로 바꿈 |
-| `guards[].name` | 문자열 (선택) | 로그와 요약에 보일 이름 |
-| `escalate.when` / `escalate.to` | 조건 / `jev`·`laya`·`laya-mlx` | 조건이 맞으면 그 모델에게 다시 물어 답을 바꿈 |
-
-조건이 가리키는 질문이 이 게임에 없거나, `allow`에 없는 행동이 있으면 게임을 불러올 때 에러가 납니다.
-
-## questions.json
-
-모델(Jev, Laya, Laya-MLX)에게 **그대로** 보냅니다. 여기에는 질문 외의 키를 넣지 마세요.
-
-- `action` (필수, `choice`): 이 게임에서 고를 수 있는 행동. 모든 인터페이스의 `actions`는 이 이름들과 정확히 같아야 함
-- `score` 질문 (선택): 2~10개의 순서 있는 단계(`criteria`)
-- `noul` 질문 (선택): 참/거짓 확률
-
-## cases.json
-
-```json
-[{"id": "telegraph-00", "state": "Turn 1. Player: ...", "truth": {"action": ["dodge"], "danger": 2, "incoming_attack": true}}]
-```
-
-- `truth`의 키는 `questions.json`의 질문 id입니다. choice는 맞는 행동 목록, score는 단계 번호, noul은 true/false 또는 0~1 확률입니다.
-- 모르는 질문은 빼거나 `null`로 두면 채점하지 않습니다. `truth`가 없는 케이스는 아무것도 채점하지 않습니다.
-- 시뮬레이션 게임은 `uv run python -m sims cases <게임> --output games/<게임>/cases.json`으로 다시 만듭니다.
-
-## socket 인터페이스
-
-```json
-{
-  "connector": "socket",
-  "launch": {"command": ["{python}", "-m", "sims", "serve", "arena"], "socket_arg": "--socket"},
-  "interval_ms": 300,
-  "actions": {"attack": "attack", "wait": "wait"}
-}
-```
-
-- `launch.command`: 게임 실행 명령. `"{python}"`은 지금 Python. 그 밖의 첫 항목이 상대 경로면 프로젝트 폴더 기준. 프로젝트 폴더에서 실행하고 `socket_arg`와 소켓 경로를 붙임
-- 이미 떠 있는 게임에 붙으려면 `launch` 대신 `"socket": "/소켓/경로"`
-- `actions`의 값: 게임에 `step`으로 보낼 명령 이름. 선택지 이름과 게임 명령 이름이 다르면 여기서 연결
-- `launch.sources` (선택): 이 빌드를 만드는 소스 파일·폴더. 실행 파일이 이 소스보다 오래되면 WebView 콘솔이 "다시 빌드하세요"라고 경고합니다. 예: `["game.py", "game_core.py", "game_ipc.py"]`. `{python} -m <패키지>`로 실행하면 기본값이 그 패키지 폴더입니다
-- `manual` (선택, socket·kbm 공통): 연결 전에 사람이 해야 할 일. WebView 콘솔의 연결 화면에 그대로 보입니다. 예: `"manual": "Steam에서 MyGame을 켜고 메인 메뉴까지 들어간 뒤 연결하세요"`
-- `observer.py`의 `describe(state)`: 게임이 주는 설명문 대신 모델에게 보낼 문장을 만들고 싶을 때만
-
-게임이 지켜야 할 요청 형식(`truth`, `done`, `reset` 포함)은 `gamelab/socket_game.py` 맨 위 주석과 프로젝트 README의 "socket 게임 붙이기"에 있습니다.
-
-## kbm 인터페이스
-
-`connector`는 `"kbm"`입니다. 예시는 [tests/fixtures/games/kbm_demo](../tests/fixtures/games/kbm_demo)에 있습니다.
-
-- `window.owner`: 활동 상태 보기에 보이는 앱 이름. `title_contains`로 창 제목을 좁힐 수 있음
-- `max_age_ms`: 관찰 후 이 시간이 지나면 판단을 버림
-- `decision_keys`: 이 state 값이 판단 중 바뀌면 판단을 버림 (비우면 state 전체)
-- `max_action_ms`: 행동 하나의 입력이 걸릴 수 있는 최대 시간
-- `pause_key`: 게임에 일시정지가 있으면 지정. 판단 동안 멈춰 턴제처럼 실행
-- `reflex_hz`: `observer.reflex()`를 초당 몇 번 돌릴지 (0이면 끔)
-
-`actions`의 값은 입력 단계 목록입니다. 좌표는 게임 창 기준 0..1 비율이고, 문자열이면 observer가 state에 넣은 `[x, y]`를 씁니다.
-
-```json
-{"tap": "space"}                      키 한 번 (ms 기본 40)
-{"tap": ["shift", "1"]}              조합키
-{"hold": "w", "ms": 400}              누르고 있기
-{"click": "left", "at": [0.5, 0.5]}  창 안 위치 클릭
-{"click": "right", "at": "target"}   state["target"] 위치 클릭
-{"move": "target"}                    커서 이동
-{"look": [120, 0]}                    상대 마우스 이동 (FPS 시점)
-{"wait": 100}                         대기
-```
-
-`interfaces/kbm/observer.py`:
-
-- `observe(frame)` (필수): 화면을 `{"state": {...}, "description": "..."}`로 바꿈. 화면에서 확실히 알 수 있는 정답이 있으면 `"truth": {...}`도 넣을 수 있음. `frame.fill_ratio`, `frame.ratio`, `frame.find_color`, `frame.mean_rgb`를 쓸 수 있음 (`kbm/vision.py`)
-- `reflex(state)` (선택): 모델 없이 바로 반응할 행동 이름 또는 `None`
-
-observer.py는 빌드된 KbmAgent 안에서 실행되므로 표준 라이브러리, Pillow, `kbm.vision`만 import하세요.
-
-## view.js
-
-WebView 콘솔의 "GAME VIEW"에 이 게임의 상태를 그림으로 보여 줍니다. 없으면 상태를 표로 보여 줍니다. 게임마다 상태 모양이 다르므로 게임 폴더에 둡니다(인터페이스가 달라도 상태가 같으면 같은 그림을 씁니다).
-
-```js
-GameViews.register('mygame', (state, h) => h.track(cells, 'lane') + h.bar('체력', state.hp, 100) + h.chips(['조준 중']));
-```
-
-- `state`: 게임이 보낸 상태(socket의 snapshot, kbm의 observer가 만든 state)
-- `h`: 그리기 도구. `bar(이름, 값, 최대)`, `track([{text, cls}], 이름)`(칸 한 줄, cls는 `player enemy exit goal cover hazard range danger dim`), `chips([...])`, `stats([stat(이름, 값)])`, `esc(문자열)`. 그 밖에 `h.truth`, `h.options`, `h.done`
-- HTML 문자열을 돌려줍니다. 페이지 보안 정책상 `style="..."` 속성은 적용되지 않으니 위 도구의 클래스를 쓰세요. 막대 길이는 `data-w="퍼센트"`로 줍니다
+새 외부 게임 폴더를 만들거나 별도 디렉터리를 연결하는 방법은 [외부 게임 연결](../docs/external-games.md)에 있습니다. `_template`은 기본 목록에서 제외하며 `play.py new`와 `add-interface`가 사용합니다.

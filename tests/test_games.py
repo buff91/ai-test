@@ -10,7 +10,8 @@ from unittest.mock import patch
 
 from PIL import Image, ImageDraw
 
-from game_core import ACTIONS
+from sims.racer import RacerSim
+ACTIONS = RacerSim.ACTIONS
 from gamelab.decide import Decider
 from gamelab.game_case import GAMES, GameCase, list_games
 from gamelab.game_types import load_types, validate_providers
@@ -21,7 +22,6 @@ from kbm.agent import AgentService
 from kbm.macos import DryRunInput
 from kbm.steps import validate_step
 from kbm.vision import Frame
-from sims.arena import ArenaSim
 from sims.service import SimService
 
 
@@ -66,7 +66,7 @@ class FakePlatform:
 
 class GameCaseTests(unittest.TestCase):
     def test_every_game_and_every_interface_loads(self):
-        self.assertEqual(GameCase("arena").connector, "socket")
+        self.assertEqual(GameCase("racer").connector, "socket")
         self.assertEqual(GameCase("kbm_demo", FIXTURES).connector, "kbm")
         for game_id in list_games():
             game = GameCase(game_id)
@@ -77,23 +77,23 @@ class GameCaseTests(unittest.TestCase):
 
     def test_one_game_can_switch_interfaces(self):
         # arena has socket (sims), app (the built window over its socket) and kbm (the same window, screen + keys).
-        self.assertEqual(GameCase("arena").connector, "socket")  # game.json default
-        self.assertEqual(GameCase("arena", interface="app").connector, "socket")
-        game = GameCase("arena", interface="kbm")
+        self.assertEqual(GameCase("racer").connector, "socket")  # game.json default
+        self.assertEqual(GameCase("racer", interface="app").connector, "socket")
+        game = GameCase("racer", interface="kbm")
         self.assertEqual(game.connector, "kbm")
-        self.assertEqual(game.cases(), GameCase("arena").cases())  # same game, same cases
+        self.assertEqual(game.cases(), GameCase("racer").cases())  # same game, same cases
         with self.assertRaises(LookupError):
-            GameCase("arena", interface="nope")
+            GameCase("racer", interface="nope")
 
     def test_interface_actions_must_match_the_games_choices(self):
         with tempfile.TemporaryDirectory() as games_dir:
-            shutil.copytree(GAMES / "arena", Path(games_dir) / "arena")
-            path = Path(games_dir) / "arena" / "interfaces" / "socket" / "interface.json"
+            shutil.copytree(GAMES / "racer", Path(games_dir) / "racer")
+            path = Path(games_dir) / "racer" / "interfaces" / "socket" / "interface.json"
             config = json.loads(path.read_text(encoding="utf-8"))
-            del config["actions"]["dodge"]
+            del config["actions"]["brake"]
             path.write_text(json.dumps(config), encoding="utf-8")
             with self.assertRaises(ValueError):
-                GameCase("arena", games_dir)
+                GameCase("racer", games_dir)
 
     def test_bad_steps_are_rejected(self):
         for step in [{"tap": "nope"}, {"hold": "w"}, {"click": "middle"},
@@ -167,7 +167,7 @@ class AgentTests(unittest.TestCase):
 class LocalSocket:
     """Calls a sim's SimService in-process instead of over a Unix socket."""
 
-    def __init__(self, sim=ArenaSim, scenario=None):
+    def __init__(self, sim=RacerSim, scenario=None):
         self.service = SimService(sim, scenario)
 
     def request(self, op, **kwargs):
@@ -176,7 +176,7 @@ class LocalSocket:
 
 class SocketGameTests(unittest.TestCase):
     def setUp(self):
-        self.game = GameCase("arena")
+        self.game = GameCase("racer")
         self.client = SocketGame(self.game, LocalSocket())
 
     def test_arena_actions_match_the_game(self):
@@ -185,15 +185,15 @@ class SocketGameTests(unittest.TestCase):
     def test_observe_and_act_use_the_same_ops_as_kbm(self):
         observed = self.client.request("observe")
         self.assertTrue(observed["ok"])
-        self.assertIn("turret", observed["description"].lower())
-        result = self.client.request("act", action="advance", signature=observed["signature"])
+        self.assertIn("race", observed["description"].lower())
+        result = self.client.request("act", action="steer_right", signature=observed["signature"])
         self.assertTrue(result["applied"], result)
-        self.assertEqual(result["state"]["player_x"], observed["state"]["player_x"] + 1)
+        self.assertNotEqual(result["state"]["lane"], observed["state"]["lane"])
 
     def test_answer_for_an_old_turn_is_stale(self):
         observed = self.client.request("observe")
-        self.client.request("act", action="wait", signature=observed["signature"])
-        result = self.client.request("act", action="advance", signature=observed["signature"])
+        self.client.request("act", action="keep", signature=observed["signature"])
+        result = self.client.request("act", action="steer_right", signature=observed["signature"])
         self.assertFalse(result["applied"])
         self.assertTrue(result["stale"])
 
@@ -214,15 +214,15 @@ class GameTypeTests(unittest.TestCase):
         self.assertEqual({spec["timing"] for spec in types.values()}, {"turn", "realtime"})
 
     def test_game_json_overrides_the_type_mapping(self):
-        base = load_types()["turn.tactics"]["providers"]
-        self.assertEqual(GameCase("arena").providers["live"], base["live"])
+        base = load_types()["realtime.racing"]["providers"]
+        self.assertEqual(GameCase("racer").providers["live"], base["live"])
         with tempfile.TemporaryDirectory() as games_dir:
-            shutil.copytree(GAMES / "arena", Path(games_dir) / "arena")
-            path = Path(games_dir) / "arena" / "game.json"
+            shutil.copytree(GAMES / "racer", Path(games_dir) / "racer")
+            path = Path(games_dir) / "racer" / "game.json"
             config = json.loads(path.read_text(encoding="utf-8"))
             config["providers"] = {"live": "laya-mlx", "models": {"laya-mlx": "english"}}
             path.write_text(json.dumps(config), encoding="utf-8")
-            game = GameCase("arena", games_dir)
+            game = GameCase("racer", games_dir)
         self.assertEqual(game.providers["live"], "laya-mlx")
         self.assertEqual(game.providers["models"], {"laya-mlx": "english"})
         # The type's shadow (laya-mlx) is now live, so it must not also run as a shadow.
@@ -234,12 +234,14 @@ class GameTypeTests(unittest.TestCase):
 
     def test_game_without_interface_is_compare_only(self):
         with tempfile.TemporaryDirectory() as games_dir:
-            shutil.copytree(GAMES / "cards", Path(games_dir) / "cards", ignore=shutil.ignore_patterns("interfaces"))
-            path = Path(games_dir) / "cards" / "game.json"
+            shutil.copytree(GAMES / "party", Path(games_dir) / "party", ignore=shutil.ignore_patterns("interfaces"))
+            path = Path(games_dir) / "party" / "game.json"
             config = json.loads(path.read_text(encoding="utf-8"))
-            del config["interface"]
+            config.pop("interface", None)
+            config.pop("versions", None)
+            config.pop("version", None)
             path.write_text(json.dumps(config), encoding="utf-8")
-            game = GameCase("cards", games_dir)
+            game = GameCase("party", games_dir)
             self.assertIsNone(game.interface)
             self.assertTrue(game.cases())
             with self.assertRaises(RuntimeError):
@@ -301,18 +303,18 @@ class FakeDecider:
 
 class ShadowTests(unittest.TestCase):
     def test_shadow_is_recorded_but_only_live_acts(self):
-        client = SocketGame(GameCase("arena"), LocalSocket())
+        client = SocketGame(GameCase("racer"), LocalSocket())
         logs = []
-        play(client, FakeDecider("jev", "advance"), {"interval_ms": 0, "max_age_ms": 1000}, steps=1,
-             record=False, log=logs.append, shadows=[FakeDecider("laya-mlx", "dodge")])
-        self.assertIn("laya-mlx=dodge", logs[0])
-        self.assertEqual(client.request("observe")["state"]["player_x"], 2)  # advance applied, dodge not
+        play(client, FakeDecider("jev", "steer_right"), {"interval_ms": 0, "max_age_ms": 1000}, steps=1,
+             record=False, log=logs.append, shadows=[FakeDecider("laya-mlx", "brake")])
+        self.assertIn("laya-mlx=brake", logs[0])
+        self.assertEqual(client.request("observe")["state"]["lane"], "right")
 
     def test_slow_shadow_does_not_hold_a_realtime_tick(self):
-        client = SocketGame(GameCase("arena"), LocalSocket())
+        client = SocketGame(GameCase("racer"), LocalSocket())
         logs = []
         started = time.time()
-        play(client, FakeDecider("laya-mlx", "wait"), {"interval_ms": 50, "max_age_ms": 1000}, steps=1,
+        play(client, FakeDecider("laya-mlx", "keep"), {"interval_ms": 50, "max_age_ms": 1000}, steps=1,
              record=False, log=logs.append, shadows=[FakeDecider("jev", "attack", delay=1.0)], shadow_wait_ms=50)
         self.assertLess(time.time() - started, 0.5)
         self.assertIn("jev=timeout", logs[0])
@@ -320,15 +322,15 @@ class ShadowTests(unittest.TestCase):
 
 class DeciderTests(unittest.TestCase):
     def test_jev_receives_the_game_cases_own_questions(self):
-        game = GameCase("swarm")
-        answer = {"answers": {"action": {"type": "choice", "choice": "kite_back", "probabilities": {"kite_back": 0.7}},
+        game = GameCase("racer")
+        answer = {"answers": {"action": {"type": "choice", "choice": "brake", "probabilities": {"brake": 0.7}},
                               "danger": {"type": "score", "score": 1.8}}}
-        with patch("compare.urllib.request.urlopen") as send:
+        with patch("gamelab.decide.urllib.request.urlopen") as send:
             send.return_value.__enter__.return_value.read.return_value = json.dumps(answer).encode()
-            with patch("compare.json.load", return_value=answer):
-                row = Decider("jev", game.questions, key="test-only-key").decide("swarmed")
+            with patch("gamelab.decide.json.load", return_value=answer):
+                row = Decider("jev", game.questions, key="test-only-key").decide("fast corner")
         self.assertEqual(json.loads(send.call_args.args[0].data)["questions"], game.questions)
-        self.assertEqual(row["action"], "kite_back")
+        self.assertEqual(row["action"], "brake")
         self.assertEqual(row["status"], "ok")
 
 

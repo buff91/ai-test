@@ -1,0 +1,66 @@
+{
+  "connector": "kbm",
+  "display": "visible",
+  "continuous": true,
+  "window": {
+    "owner": "python",
+    "title_contains": "Teaching Lab - Three Lane MOBA"
+  },
+  "interval_ms": 1000,
+  "max_age_ms": 2500,
+  "max_action_ms": 300,
+  "pause_key": "p",
+  "reflex_hz": 0,
+  "decision_keys": [],
+  "actions": {
+    "advance": [
+      {
+        "tap": "w",
+        "ms": 30
+      }
+    ],
+    "retreat": [
+      {
+        "tap": "s",
+        "ms": 30
+      }
+    ],
+    "attack": [
+      {
+        "tap": "space",
+        "ms": 30
+      }
+    ],
+    "skill": [
+      {
+        "tap": "q",
+        "ms": 30
+      }
+    ],
+    "recall": [
+      {
+        "tap": "b",
+        "ms": 30
+      }
+    ],
+    "lane_left": [
+      {
+        "tap": "a",
+        "ms": 30
+      }
+    ],
+    "lane_right": [
+      {
+        "tap": "d",
+        "ms": 30
+      }
+    ],
+    "wait": [
+      {
+        "tap": "e",
+        "ms": 30
+      }
+    ]
+  },
+  "manual": "게임 창 준비를 누르거나 uv run python -m gamelab.desktop_game --game moba --socket /tmp/teaching-moba.sock 로 먼저 실행하세요. 키마는 화면의 숫자·색상 계기를 캡처해 읽고 실제 키를 보냅니다. KbmAgent의 화면 기록·손쉬운 사용 권한을 확인하고 입력 전 게임 창을 앞으로 가져오세요. 연결 해제 후에도 준비한 창은 유지됩니다."
+}

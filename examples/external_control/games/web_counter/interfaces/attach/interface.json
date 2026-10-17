@@ -1,0 +1,8 @@
+{
+  "connector": "socket",
+  "display": "unknown",
+  "socket": "/tmp/decision-lab-web-counter.sock",
+  "manual": "별도 터미널에서 uv run --group browser python -m examples.external_control.browser_bridge --socket /tmp/decision-lab-web-counter.sock 를 먼저 실행하세요. 콘솔 연결을 끊어도 이 브리지와 브라우저는 유지됩니다.",
+  "interval_ms": 500,
+  "actions": {"increase": "increase", "decrease": "decrease", "confirm": "confirm", "wait": "wait"}
+}

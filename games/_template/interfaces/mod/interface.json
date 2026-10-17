@@ -1,0 +1,9 @@
+{
+  "connector": "mod",
+  "display": "visible",
+  "endpoint": {"host": "127.0.0.1", "port": 8765},
+  "manual": "게임과 GameLab JSONL v1 모드 브리지를 먼저 실행하세요. Slay the Spire용 설치 모드를 제공하는 템플릿이 아닙니다.",
+  "interval_ms": 700,
+  "max_age_ms": 5000,
+  "actions": {"act": {"command": "play_card", "card_index": 0, "target_index": 0}, "wait": "wait"}
+}

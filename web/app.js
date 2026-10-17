@@ -13,6 +13,16 @@ let frameUrl = null;
 const openCalls = new Set();
 const loadedViews = new Set();
 let polling = false;
+let lesson = 'play';
+let settingsSchema = {values: {}, editable: [], fields: {}};
+let activeSettingsKey = '';
+const connectionDrafts = new Map();
+const preparedWindows = new Map();
+const managedSocketAssignments = new Map();
+const managedKbmAssignments = new Map();
+const targetPreferences = new Map();
+let windowPreparing = false;
+let windowPreparationError = '';
 
 function esc(value) {
   return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -85,6 +95,7 @@ async function command(path, data) {
     if (data && data.key) $('api-key').value = '';
     await poll();
   } catch (error) {
+    if (path === '/api/connect') $('connection-settings-error').textContent = error.message;
     showMessage(error.message, true);
   }
 }
@@ -96,9 +107,185 @@ function showMessage(message, error = false) {
 
 const gameById = id => catalog.games.find(g => g.id === id);
 const selectedGame = () => gameById($('game').value);
-const selectedInterface = () => (selectedGame()?.interfaces || []).find(i => i.name === $('interface').value);
+const selectedInterface = () => selectedGame()?.interfaces.find(i => !i.error && `${i.version}/${i.name}` === $('target').value);
+const modeOf = item => item.run?.target?.mode === 'attach' ? 'attach' : item.run?.target?.display || 'unknown';
+const modeLabels = {visible: '게임 창 열기', headless: '화면 없이 실행', attach: '실행 중 게임 연결', unknown: '게임 연결'};
+const displayLabels = {visible: '게임 창 있음', headless: '게임 창 없음', unknown: '화면 정보 없음'};
+const connectorLabels = {socket: '게임 데이터 · 소켓', mod: '게임 플러그인 · Mod', kbm: '화면 · 키보드·마우스'};
+const controlRoute = item => item?.connector === 'kbm' ? 'kbm' : ['socket', 'mod'].includes(item?.connector) ? 'internal' : null;
 const connectedGame = () => latest?.connection?.game ? gameById(latest.connection.game) : null;
 const isRealtime = game => game?.timing === 'realtime';
+const providerName = p => ({laya: 'Laya', jev: 'Jev', 'laya-mlx': 'Laya-MLX'}[p] || p);
+const windowFor = (game, version) => preparedWindows.get(`${game?.id}/${version}`);
+const visibleAttach = item => item.connector === 'socket' && item.run?.mode === 'attach' && item.run?.target?.display === 'visible';
+const preparedAttach = (game, version) => (game?.interfaces || []).find(item => !item.error && visibleAttach(item) &&
+  (!version || item.version === version) && windowFor(game, item.version)?.alive);
+
+function rememberTargetPreference() {
+  if (selectedInterface()) targetPreferences.set($('game').value, $('target').value);
+}
+
+function syncPreparedTarget(data) {
+  const game = selectedGame();
+  const current = selectedInterface();
+  if (!game || !current || windowPreparing || data.busy || ['connected', 'connecting'].includes(data.connection?.status) ||
+      targetPreferences.has(game.id)) return;
+  // A first status response can arrive after the catalog chose its initial launch profile.
+  if (!visibleAttach(current) && !(current.connector === 'socket' && current.run?.mode === 'launch' && current.run?.target?.display === 'visible')) return;
+  const attach = preparedAttach(game, current.version) || preparedAttach(game);
+  if (!attach) return;
+  if (attach !== current) {
+    $('target').value = `${attach.version}/${attach.name}`;
+    renderRunHow();
+  } else {
+    applyPreparedSocket(attach, windowFor(game, attach.version));
+  }
+}
+
+function routeTarget(route, game = selectedGame(), current = selectedInterface()) {
+  const items = (game?.interfaces || []).filter(item => !item.error && controlRoute(item) === route);
+  if (items.includes(current)) return current;
+  const sameVersion = items.filter(item => item.version === current?.version);
+  const candidates = sameVersion.length ? sameVersion : items;
+  return candidates.find(item => visibleAttach(item) && windowFor(game, item.version)?.alive) ||
+    candidates.find(item => item.run?.target?.display === 'visible' && item.run.mode === 'launch') ||
+    candidates.find(item => item.run?.target?.display === 'visible') || candidates[0];
+}
+
+function selectControlRoute(route) {
+  if (windowPreparing || latest?.busy || latest?.auto || ['connected', 'connecting'].includes(latest?.connection?.status)) return;
+  const item = routeTarget(route);
+  if (!item) return;
+  lesson = route === 'kbm' ? 'kbm' : 'socket';
+  if (item === selectedInterface()) { renderLesson(); return; }
+  $('target').value = `${item.version}/${item.name}`;
+  rememberTargetPreference();
+  renderRunHow();
+}
+
+function applyPreparedSocket(item, prepared, force = false) {
+  if (!item || !visibleAttach(item) || !prepared?.alive) return;
+  const key = `${$('game').value}/${item.version}/${item.name}`;
+  const current = $('socket-path').value;
+  // Refresh an earlier automatic address after a window restart; keep explicit custom addresses.
+  if (force || !current || current === item.run.socket || current === managedSocketAssignments.get(key)) {
+    $('socket-path').value = prepared.socket;
+    managedSocketAssignments.set(key, prepared.socket);
+  }
+}
+
+function preparedKbmWindow(item, settings) {
+  const prepared = windowFor(selectedGame(), item?.version);
+  const defaults = item?.configuration?.values?.window;
+  if (item?.connector !== 'kbm' || !prepared?.alive || !defaults) return null;
+  const configured = {...defaults, ...(settings.window || {})};
+  const priorPids = managedKbmAssignments.get(`${$('game').value}/${item.version}/${item.name}`);
+  return configured.owner === defaults.owner && (configured.title_contains || '') === (defaults.title_contains || '') &&
+    (configured.pid == null || configured.pid === prepared.pid || priorPids?.has(configured.pid)) ? prepared : null;
+}
+
+function rememberManagedKbm(item, pid) {
+  const key = `${$('game').value}/${item.version}/${item.name}`;
+  const pids = managedKbmAssignments.get(key) || new Set();
+  pids.add(pid);
+  managedKbmAssignments.set(key, pids);
+}
+
+function connectionPayload() {
+  const item = selectedInterface();
+  if (!item) throw new Error('연결할 인터페이스를 선택하세요.');
+  const settings = connectionSettingsPayload();
+  const prepared = preparedKbmWindow(item, settings);
+  if (prepared) {
+    rememberManagedKbm(item, prepared.pid);
+    if (settings.window?.pid != null) settings.window = {...settings.window, pid: prepared.pid};
+  }
+  return {game: $('game').value, version: item.version, mode: modeOf(item), interface: item.name,
+    dry_run: $('dry-run').checked, agent: $('agent').value, settings,
+    ...(prepared ? {prepared_window_pid: prepared.pid} : {})};
+}
+
+function renderWindowPreparation() {
+  const game = selectedGame();
+  const item = selectedInterface();
+  const version = game?.versions?.find(candidate => candidate.id === item?.version);
+  const prepared = windowFor(game, version?.id);
+  const locked = windowPreparing || ['connected', 'connecting'].includes(latest?.connection?.status);
+  $('window-preparation').hidden = !version?.window_interface;
+  $('prepare-window').disabled = locked || !!latest?.busy || !version?.window_interface;
+  $('prepare-window').textContent = windowPreparing ? '게임 창 준비 중…' : prepared?.alive ? '준비된 게임 창 사용 ↗' : '게임 창 준비 ↗';
+  $('window-preparation-note').textContent = windowPreparationError || (windowPreparing ? '게임 창을 실행하고 연결 주소를 확인합니다.' :
+    prepared?.alive ? '창이 준비되었습니다. 연결을 끊어도 이 창은 유지됩니다. 두 제어 방식을 같은 창에서 번갈아 연결하세요.' :
+    '먼저 게임 창을 여세요. 게임 인터페이스와 화면·키마가 같은 창을 사용하며, 연결을 끊어도 창은 유지됩니다.');
+  if (item?.connector === 'kbm' && prepared?.alive && !windowPreparationError) {
+    let binding = null;
+    try { binding = preparedKbmWindow(item, JSON.parse($('connection-json').value || '{}')); } catch {}
+    $('window-preparation-note').textContent += binding ? ` 키마도 준비한 게임 창에 연결합니다 (PID ${binding.pid}).` :
+      ' 창 설정을 변경했으므로 키마는 입력한 창 조건으로 연결합니다.';
+  }
+  $('window-preparation-note').classList.toggle('bad', !!windowPreparationError);
+  $('game').disabled = $('target').disabled = locked;
+}
+
+async function prepareGameWindow() {
+  const game = selectedGame();
+  const item = selectedInterface();
+  if (windowPreparing || latest?.busy || ['connected', 'connecting'].includes(latest?.connection?.status) ||
+      !game?.versions.some(version => version.id === item?.version && version.window_interface)) return;
+  windowPreparing = true;
+  windowPreparationError = '';
+  renderControlRoutes();
+  try {
+    const response = await api('/api/game-window', {game: game.id, version: item.version});
+    const prepared = response.game_window;
+    if (!prepared?.alive || prepared.game !== game.id || prepared.version !== item.version) throw new Error('준비한 게임 창의 정보를 확인할 수 없습니다.');
+    preparedWindows.set(`${game.id}/${item.version}`, prepared);
+    if (controlRoute(item) === 'internal') {
+      const attach = game.interfaces.find(candidate => !candidate.error && candidate.version === item.version && visibleAttach(candidate));
+      if (attach) {
+        $('target').value = `${attach.version}/${attach.name}`;
+        renderRunHow();
+        applyPreparedSocket(attach, prepared, true);
+        rememberTargetPreference();
+        saveConnectionDraft();
+      }
+    }
+    await poll();
+  } catch (error) {
+    windowPreparationError = error.message;
+    showMessage(error.message, true);
+  } finally {
+    windowPreparing = false;
+    renderControlRoutes();
+  }
+}
+
+function renderControlRoutes() {
+  const game = selectedGame();
+  const item = selectedInterface();
+  const route = controlRoute(item);
+  const locked = windowPreparing || latest?.busy || latest?.auto || ['connected', 'connecting'].includes(latest?.connection?.status);
+  document.querySelectorAll('[data-route]').forEach(button => {
+    const available = !!routeTarget(button.dataset.route);
+    const selected = button.dataset.route === route;
+    button.disabled = locked || !available;
+    button.classList.toggle('selected', selected);
+    button.setAttribute('aria-pressed', String(selected));
+    button.title = !available ? '이 게임에 등록된 연결이 없습니다.' : locked ? '연결을 끊으면 제어 방식을 변경할 수 있습니다.' : '';
+  });
+  const observation = game?.learning?.observation || '게임별 관찰 코드가 캡처를 상태 설명으로 바꿉니다. 지원하는 화면은 관찰 코드에 따라 달라집니다.';
+  $('control-route-note').textContent = route === 'kbm' ? observation :
+    route === 'internal' ? '게임이 보내는 내부 상태를 읽고, 모델이 선택한 행동을 소켓 또는 Mod로 전달합니다.' : '게임을 선택하면 지원하는 제어 방식을 표시합니다.';
+  if (locked) $('control-route-note').textContent += ' 연결을 끊으면 제어 방식을 변경할 수 있습니다.';
+  const steps = route === 'kbm' ? ['게임 화면', '화면 관찰 코드', '모델 판단', '키보드·마우스'] : ['게임 내부 상태', '모델 판단', '행동 명령'];
+  $('route-flow').innerHTML = steps.map(step => `<span>${esc(step)}</span>`).join('<i aria-hidden="true">→</i>');
+  $('target-summary').textContent = item ? `${item.version} · ${modeLabels[modeOf(item)]}` : '연결 선택 전';
+  $('connect').textContent = item?.connector === 'kbm' ? ($('dry-run').checked ? '화면 관찰 연결 ↗' : '실제 키마 연결 ↗') :
+    item?.run?.mode === 'launch' && item.run.target?.display === 'visible' ? '게임 창 열고 연결 ↗' : '게임 인터페이스 연결 ↗';
+  $('connect').disabled = locked || !item;
+  renderWindowPreparation();
+  renderLesson();
+}
 
 function ago(ms) {
   if (ms === null || ms === undefined) return '—';
@@ -110,6 +297,126 @@ function duration(seconds) {
   return `${Math.floor(seconds / 3600)}시간 ${Math.floor(seconds % 3600 / 60)}분`;
 }
 const serverNow = () => Date.now() / 1000 - clockOffset;
+
+// Independent play modes share the existing connection selection and its locks.
+function playModeBlock(mode) {
+  if (!['play', 'socket', 'kbm'].includes(mode)) return '지원하지 않는 플레이 방식입니다.';
+  const route = mode === 'kbm' ? 'kbm' : 'internal';
+  if (mode !== 'play' && !routeTarget(route)) return '이 게임에 등록된 연결이 없습니다.';
+  if (windowPreparing) return '게임 창 준비가 끝나면 플레이 방식을 선택할 수 있습니다.';
+  if (latest?.busy || latest?.auto) return '현재 실행을 중지하면 플레이 방식을 변경할 수 있습니다.';
+  if (latest?.connection?.status === 'connecting') return '연결이 끝나면 플레이 방식을 선택할 수 있습니다.';
+  if (latest?.connection?.status === 'connected' && mode !== 'play' && controlRoute(selectedInterface()) !== route) {
+    return '연결을 끊으면 다른 제어 방식으로 변경할 수 있습니다.';
+  }
+  return '';
+}
+
+function selectPlayMode(mode) {
+  if (playModeBlock(mode)) return;
+  if (mode !== 'play' && latest?.connection?.status !== 'connected') {
+    selectControlRoute(mode === 'kbm' ? 'kbm' : 'internal');
+  }
+  lesson = mode;
+  renderLesson();
+  renderSurface();
+}
+
+function renderLesson() {
+  const game = selectedGame();
+  const item = selectedInterface();
+  const visible = item?.run?.target?.display === 'visible';
+  const hasKbm = game?.interfaces.some(i => !i.error && i.connector === 'kbm');
+  const hasSocket = game?.interfaces.some(i => !i.error && ['socket', 'mod'].includes(i.connector));
+  const canPrepare = game?.versions?.some(version => version.id === item?.version && version.window_interface);
+  const learning = game?.learning || {};
+  const route = controlRoute(item);
+  if (route && (lesson !== 'play' || latest?.auto || latest?.busy)) lesson = route === 'kbm' ? 'kbm' : 'socket';
+  const lessons = {
+    play: {
+      label: '직접 플레이', title: '내가 직접 행동을 선택하고 조작합니다.',
+      copy: learning.objective || '게임의 목표와 선택지를 확인하세요. 행동을 직접 골라 보고, 게임 상태가 어떻게 달라지는지 살펴보세요.',
+      task: visible ? `${canPrepare ? '「게임 창 준비」로 창을 열면 모델 연결 없이 플레이할 수 있습니다. ' : ''}${learning.controls || '게임 창의 조작 안내에 따라 직접 플레이하세요.'}` :
+        '이 실행 대상은 별도 게임 창이 없습니다. 「게임 창 열기」 대상을 고르거나, 연결 후 「콘솔에서 행동 하나 보내기」를 사용하세요.',
+    },
+    socket: {
+      label: '모델 제어 · 게임 데이터', title: '게임 내부 상태로 모델이 판단합니다.',
+      copy: '게임이나 Mod가 보낸 상태 설명과 선택지를 모델에 전달합니다. 제어 모델의 Choice를 인터페이스의 행동 매핑으로 바꿔 전송합니다. 비교 모델은 같은 상황을 판단하고 기록만 남깁니다.',
+      task: hasSocket ? `${canPrepare ? '「게임 창 준비」 → ' : ''}「게임 인터페이스」 선택 → 연결 → 「입력 없이 판단만 보기」 → 판단 1회 실행. 게임 창의 변화와 아래 전송 명령·응답을 함께 확인하세요. 외부 게임은 연결 주소와 행동 매핑을 먼저 확인하세요.` :
+        '이 게임은 데이터 연결을 제공하지 않습니다. 화면 관찰과 키보드·마우스 연결을 선택하세요.',
+    },
+    kbm: {
+      label: '모델 제어 · 화면 + 키마', title: '화면을 관찰하고 모델의 선택을 키보드·마우스로 입력합니다.',
+      copy: `KbmAgent가 게임 창을 캡처하고 관찰 코드가 화면을 상태 설명으로 바꿉니다. ${learning.observation || '화면을 읽는 관찰 코드는 게임별로 준비해야 합니다.'} 모델은 그 설명을 읽어 행동을 선택합니다.`,
+      task: hasKbm ? `${canPrepare ? '「게임 창 준비」' : '안내에 따라 게임 창 실행'} → 「화면 + 키보드·마우스」 선택 → 입력 미리보기로 연결·관찰 확인 → 연결을 끊고 미리보기 해제 → 다시 연결해 실제 입력 확인. ${canPrepare ? '준비한 게임 창은 유지됩니다.' : '관찰 코드와 키·클릭 매핑은 게임에 맞게 설정하세요.'}` :
+        '이 게임은 화면·키보드·마우스 연결을 지원하지 않습니다. 이 연결 방식을 지원하는 다른 게임을 선택하세요.',
+    },
+  };
+  const selected = lessons[lesson] || lessons.play;
+  $('lesson-label').textContent = selected.label;
+  $('lesson-title').textContent = selected.title;
+  $('lesson-copy').textContent = selected.copy;
+  $('lesson-task').textContent = selected.task;
+  document.querySelectorAll('[data-lesson]').forEach(button => {
+    const active = button.dataset.lesson === lesson;
+    button.classList.toggle('selected', active);
+    button.setAttribute('aria-pressed', String(active));
+    const reason = playModeBlock(button.dataset.lesson);
+    button.disabled = !!reason;
+    button.title = reason;
+  });
+  const manual = lesson === 'play';
+  ['model-settings', 'comparison-settings', 'run', 'auto', 'analyze', 'model-shortcut', 'control-route-label', 'control-routes', 'control-route-note', 'route-flow'].forEach(id => { $(id).hidden = manual; });
+  $('latency-tool').disabled = manual;
+  $('latency-tool').title = manual ? '모델 제어를 선택하면 응답 시간과 추가 지연을 비교할 수 있습니다.' : '';
+  $('play-mode-note').textContent = playModeBlock(lesson) || (manual
+    ? '직접 플레이는 모델이 필요 없습니다. 게임 창의 키와 버튼으로 조작하세요.'
+    : latest?.connection?.status === 'connected' ? '선택한 방식으로 연결되어 있습니다. 다른 연결 방식으로 바꾸려면 연결을 끊으세요.'
+    : '선택한 방식에 맞춰 연결 설정을 준비했습니다. 게임 연결 후 실행하세요.');
+}
+
+function renderSurface() {
+  const connected = latest?.connection?.status === 'connected';
+  const item = selectedInterface();
+  const target = connected ? latest.connection.target : item?.run?.target;
+  const kbm = (connected ? latest.connection.connector : item?.connector) === 'kbm';
+  const dryRun = connected ? latest.options.dry_run : $('dry-run').checked;
+  const visible = target?.display === 'visible';
+  const headless = target?.display === 'headless';
+  $('surface-badge').textContent = lesson === 'play' ? '직접 플레이' : kbm ? (dryRun ? '화면 관찰 · 입력 미리보기' : '화면 관찰 · 실제 입력') : visible ? '별도 게임 창' : headless ? '화면 없이 실행 · 데이터 요약' : '게임 상태 관찰';
+  if (lesson === 'play') {
+    $('foreground-title').textContent = headless ? '콘솔에서 직접 행동을 선택하세요.' : '게임 창에서 직접 조작하세요.';
+    $('foreground-copy').textContent = headless ? '연결 후 「콘솔에서 행동 하나 보내기」를 사용하세요. 별도 창에서 플레이하려면 실행 대상을 「게임 창 열기」로 선택하세요.' :
+      '게임 창의 키와 버튼으로 플레이합니다. 모델은 실행하지 않습니다. 지원하는 게임은 「게임 창 준비」로 창을 열 수 있습니다.';
+  } else if (kbm) {
+    $('foreground-title').textContent = dryRun ? '게임 화면을 읽고 판단만 기록합니다.' : '열려 있는 게임 창을 보고 제어합니다.';
+    $('foreground-copy').textContent = dryRun ? '아래 화면은 마지막 캡처입니다. 입력 미리보기에서는 키보드·마우스 입력을 보내지 않습니다.' : '아래 화면은 마지막 캡처입니다. 실제 움직임과 키보드·마우스 입력 결과는 게임 창에서 확인하세요.';
+  } else if (visible) {
+    $('foreground-title').textContent = connected ? '열린 게임 창에서 플레이를 확인하세요.' : target?.mode === 'attach' ? '이미 실행 중인 게임 창에 연결합니다.' : '게임 창에서 직접 플레이할 수 있습니다.';
+    $('foreground-copy').textContent = '게임 창이 실제 플레이 화면입니다. 아래 도식은 수신한 상태 데이터의 요약이며 화면 캡처가 아닙니다. 게임 창과 이 콘솔을 나란히 두고 입력 결과를 확인하세요.';
+  } else if (headless) {
+    $('foreground-title').textContent = '이 실행 방식은 별도 게임 창을 사용하지 않습니다.';
+    $('foreground-copy').textContent = '아래 내용은 관찰한 데이터의 요약입니다. 별도 게임 창을 지원하는 게임은 「게임 창 열기」 대상으로 실행할 수 있습니다.';
+  } else {
+    $('foreground-title').textContent = '연결한 게임의 마지막 상태를 확인합니다.';
+    $('foreground-copy').textContent = '게임 창 표시 여부가 확인되지 않았습니다. 아래에는 마지막으로 관찰한 상태와 모델 판단을 보여 줍니다.';
+  }
+}
+
+function updateMeasurements(data) {
+  const game = connectedGame() || selectedGame();
+  const row = data.rows?.[0];
+  const ms = value => typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value).toLocaleString()} <em>ms</em>` : '—';
+  $('measure-model').innerHTML = ms(row?.decision?.model_ms);
+  $('measure-loop').innerHTML = ms(row?.loop_ms);
+  $('measure-budget').innerHTML = ms(game?.latency_budget_ms);
+  $('measure-stale').innerHTML = `${(data.rows || []).filter(r => r.stale).length} <em>회</em>`;
+  $('measure-model').classList.toggle('bad', !!(row && row.decision.model_ms > game?.latency_budget_ms));
+  $('measure-provider').textContent = row ? `${row.decision.provider.toUpperCase()} · 최근 ${row.step}번째 판단` : '아직 실행하지 않음';
+  $('measure-note').textContent = row
+    ? `모델 응답 시간은 실제 호출에 걸린 시간입니다. ${row.observation_to_input_ms != null ? `관찰 → 입력 시도 ${Math.round(row.observation_to_input_ms)} ms. ` : ''}전체 처리 시간에는 비교 모델을 기다린 시간도 포함됩니다. 실험용 추가 대기: ${row.decision_delay_ms || 0} ms${row.analysis_only ? ' · 입력 없이 판단만 기록' : row.cancelled ? ' · 중지 요청으로 입력 취소' : ''}. 오래된 관찰로 인한 입력 취소는 최근 ${data.rows.length}개 기록 기준입니다.`
+    : '모델을 실행하면 응답 시간과 관찰부터 기록 완료까지의 전체 처리 시간을 표시합니다. 실험용 추가 대기는 모델 응답 시간에 포함하지 않습니다.';
+}
 
 // Game and interface ---------------------------------------------------------
 
@@ -129,24 +436,29 @@ function fillGames() {
     option.disabled = !usable;
     groups[label].appendChild(option);
   });
-  const first = catalog.games.find(g => !g.error && g.interfaces.some(i => !i.error));
+  const usableGames = catalog.games.filter(g => !g.error && g.interfaces.some(i => !i.error));
+  const first = usableGames.find(g => g.featured) || usableGames[0];
   if (first) select.value = first.id;
   onGameChange();
 }
 
-function onGameChange() {
+function onGameChange(preferred) {
+  windowPreparationError = '';
   const game = selectedGame();
-  const select = $('interface');
-  select.innerHTML = '';
-  (game?.interfaces || []).forEach(item => {
-    const option = new Option(`${item.name} (${item.connector || '오류'})${item.name === game.default_interface ? ' · 기본' : ''}`, item.name);
-    option.disabled = !!item.error;
-    select.appendChild(option);
-  });
-  if (game?.default_interface) select.value = game.default_interface;
+  const items = (game?.interfaces || []).filter(i => !i.error);
+  $('target').replaceChildren(...items.map(i => new Option(`${modeLabels[modeOf(i)]} · ${connectorLabels[i.connector] || i.connector} · ${i.version}/${i.name}`, `${i.version}/${i.name}`)));
+  // Revisit the same prepared instance unless the user explicitly chose another target.
+  const first = items.find(i => `${i.version}/${i.name}` === preferred) ||
+    items.find(i => `${i.version}/${i.name}` === targetPreferences.get(game?.id)) ||
+    (lesson !== 'play' && routeTarget(lesson === 'kbm' ? 'kbm' : 'internal', game, null)) ||
+    preparedAttach(game) ||
+    items.find(i => modeOf(i) === 'visible' && i.run.mode === 'launch') ||
+    items.find(i => modeOf(i) === 'visible') ||
+    items.find(i => i.version === game.default_version && i.name === game.default_interface) || items[0];
+  if (first) $('target').value = `${first.version}/${first.name}`;
   if (game) {
     choice = {provider: game.providers.live, shadows: [...game.providers.shadow], policy: false};
-    $('game-meta').textContent = `${game.type} · ${isRealtime(game) ? `실시간 · 지연 예산 ${game.latency_budget_ms}ms` : `턴제 · 판단 예산 ${game.latency_budget_ms}ms`} · live ${game.providers.live}${game.providers.shadow.map(p => ' +' + p).join('')}`;
+    $('game-meta').textContent = `${game.type_label || game.type} · 목표 응답 시간 ${game.latency_budget_ms} ms`;
     loadView(game);
   }
   renderModelControls(game);
@@ -155,30 +467,114 @@ function onGameChange() {
 }
 
 function renderGameKind(game) {
-  $('run').innerHTML = isRealtime(game) ? '▶ &nbsp; 한 틱 실행' : '▶ &nbsp; 한 턴 실행';
-  $('stat-latency-label').textContent = game ? `LAST LATENCY · 예산 ${game.latency_budget_ms}ms` : 'LAST LATENCY';
+  $('run').innerHTML = '▶ &nbsp; 판단 1회 실행';
+  $('stat-latency-label').textContent = game ? `최근 응답 · 목표 ${game.latency_budget_ms} ms` : '최근 모델 응답 시간';
 }
 
 function commandText(command) {
   return command.map(part => part === '{python}' ? 'python' : part).join(' ');
 }
 
+// The catalog declares editable settings. No game IDs or transport defaults live here.
+function saveConnectionDraft() {
+  if (!activeSettingsKey) return;
+  connectionDrafts.set(activeSettingsKey, {
+    schema: settingsSchema,
+    json: $('connection-json').value,
+    socket: $('socket-path').value,
+    integers: Object.fromEntries((settingsSchema.editable || []).filter(key => settingsSchema.fields?.[key]?.type === 'integer')
+      .map(key => [key, $(`setting-${key}`).value])),
+    dryRun: $('dry-run').checked,
+    agent: $('agent').value,
+  });
+}
+
+function renderConnectionSettings(values) {
+  saveConnectionDraft();
+  const item = selectedInterface();
+  activeSettingsKey = item ? `${$('game').value}/${item.version}/${item.name}` : '';
+  settingsSchema = selectedInterface()?.configuration || {values: {}, editable: [], fields: {}};
+  const saved = connectionDrafts.get(activeSettingsKey);
+  const draft = values === undefined && saved?.schema === settingsSchema ? saved : null;
+  const editable = settingsSchema.editable || [];
+  const fields = settingsSchema.fields || {};
+  const current = values || settingsSchema.values || {};
+  const prepared = windowFor(selectedGame(), item?.version);
+  if (values && prepared?.alive && preparedKbmWindow(item, current)?.pid === current.window?.pid) {
+    rememberManagedKbm(item, prepared.pid);
+  }
+  $('timing-settings').innerHTML = editable.filter(key => fields[key]?.type === 'integer').map(key => {
+    const field = fields[key];
+    return `<label for="setting-${esc(key)}">${esc(field.label || key)}<input id="setting-${esc(key)}" data-setting="${esc(key)}" type="number" step="1" min="${esc(field.min ?? 1)}" max="${esc(field.max ?? 600000)}" value="${esc(draft?.integers[key] ?? current[key] ?? '')}"></label>`;
+  }).join('');
+  const mappings = Object.fromEntries(editable.filter(key => fields[key]?.type !== 'integer' && key !== 'socket').map(key => [key, current[key]]));
+  $('socket-path').value = draft?.socket ?? current.socket ?? item?.run?.socket ?? '';
+  $('connection-json').value = draft?.json ?? JSON.stringify(mappings, null, 2);
+  if (draft) {
+    $('dry-run').checked = draft.dryRun;
+    $('agent').value = draft.agent;
+  } else if (item?.connector === 'kbm' && values === undefined) {
+    $('dry-run').checked = true;
+  }
+  $('connection-json').hidden = $('mapping-label').hidden = $('mapping-help').hidden = !Object.keys(mappings).length;
+  $('connection-settings').hidden = !editable.length;
+  $('connection-settings-error').textContent = '';
+  $('connection-settings-note').textContent = latest?.connection?.status === 'connected'
+    ? '현재 연결에 적용된 값입니다. 변경하려면 연결을 끊고 다시 연결하세요.'
+    : '변경한 값은 다음 연결부터 적용합니다. 인터페이스 파일의 원본 설정은 유지됩니다.';
+}
+
+function connectionSettingsPayload() {
+  const editable = settingsSchema.editable || [];
+  const fields = settingsSchema.fields || {};
+  let mappings;
+  try { mappings = JSON.parse($('connection-json').value || '{}'); }
+  catch { throw new Error('연결 설정 JSON 문법을 확인하세요.'); }
+  if (!mappings || typeof mappings !== 'object' || Array.isArray(mappings)) throw new Error('연결 설정은 JSON 객체여야 합니다.');
+  for (const key of Object.keys(mappings)) {
+    if (!editable.includes(key) || fields[key]?.type === 'integer') throw new Error(`이 인터페이스에서 수정할 수 없는 설정: ${key}`);
+  }
+  const settings = {...mappings};
+  for (const key of editable) {
+    const field = fields[key];
+    if (field?.type !== 'integer') continue;
+    const input = $(`setting-${key}`);
+    const value = Number(input.value);
+    if (!input.value.trim() || !Number.isInteger(value) || value < (field.min ?? 1) || value > (field.max ?? 600000)) {
+      throw new Error(`${field.label || key}: ${field.min ?? 1}~${field.max ?? 600000} 사이의 정수를 입력하세요.`);
+    }
+    settings[key] = value;
+  }
+  if (editable.includes('socket')) settings.socket = $('socket-path').value.trim();
+  return settings;
+}
+
 function renderRunHow() {
   const item = selectedInterface();
+  const version = selectedGame()?.versions.find(v => v.id === item?.version);
   const how = $('run-how');
   const manual = $('run-manual');
+  $('target-note').textContent = [version?.name, version?.description].filter(Boolean).join(' · ').replace(/\bsocket\b/g, '소켓').replace(/키마/g, '키보드·마우스');
   $('kbm-options').hidden = item?.connector !== 'kbm';
-  if (!item) { how.textContent = '연결할 인터페이스가 없습니다. 이 게임은 play.py compare로 비교만 할 수 있습니다.'; manual.hidden = true; return; }
+  $('socket-field').hidden = !(item?.connector === 'socket' && item.run?.mode === 'attach');
+  renderConnectionSettings();
+  applyPreparedSocket(item, windowFor(selectedGame(), item?.version));
+  renderControlRoutes();
+  renderSurface();
+  if (!item) { how.textContent = '사용할 수 있는 연결 방식이 없습니다. 터미널에서 play.py compare로 모델을 비교할 수 있습니다.'; manual.hidden = true; return; }
   if (item.error) { how.innerHTML = `<span class="bad">${esc(item.error)}</span>`; manual.hidden = true; return; }
   const run = item.run;
+  const target = run.target;
+  $('workspace-title').textContent = selectedGame()?.name || '게임 상태';
+  $('game-run-context').textContent = `${target.version_name} · ${connectorLabels[item.connector] || item.connector} · ${displayLabels[target.display]}`;
   if (run.mode === 'launch') {
     how.innerHTML = `연결을 누르면 콘솔이 게임을 실행하고, 연결을 끊으면 종료합니다.<code>${esc(commandText(run.command))} ${esc(run.socket_arg)} &lt;임시 소켓&gt;</code>` +
       (run.build?.kind === 'binary' && !run.build.exists ? `<small class="bad">실행 파일이 없습니다. ${esc(run.hint || '먼저 빌드하세요.')}</small>` :
        run.hint ? `<small>${esc(run.hint)}</small>` : '');
   } else if (run.mode === 'attach') {
-    how.innerHTML = `이미 실행 중인 게임의 소켓에 붙습니다. 콘솔은 게임을 띄우거나 끄지 않습니다.<code>${esc(run.socket)}</code>`;
+    how.innerHTML = `실행 중인 게임${item.connector === 'mod' ? '의 Mod 브리지' : '의 소켓'}에 연결합니다. 연결을 끊어도 게임은 계속 실행됩니다.<code>${esc(item.connector === 'mod' ? JSON.stringify(run.endpoint || item.configuration?.values?.endpoint || {}) : $('socket-path').value)}</code>`;
   } else {
-    how.innerHTML = `열려 있는 게임 창에 붙습니다. KbmAgent가 창을 캡처하고 키보드·마우스 입력을 보냅니다.<code>창: ${esc(run.owner)}${run.title_contains ? ` · 제목에 "${esc(run.title_contains)}" 포함` : ''}</code>`;
+    how.innerHTML = `열려 있는 게임 창에 연결합니다. KbmAgent가 화면을 캡처하며, 입력 미리보기를 끄면 키보드·마우스로 조작합니다.<code>창: ${esc(run.owner)}${run.title_contains ? ` · 제목에 "${esc(run.title_contains)}" 포함` : ''}</code>`;
   }
   const steps = run.manual || (run.mode === 'window' ? `${run.owner} 창을 열고 게임 화면까지 들어간 뒤 연결하세요.` :
                                run.mode === 'attach' ? '게임을 먼저 실행한 뒤 연결하세요.' : '');
@@ -192,24 +588,113 @@ function renderRunHow() {
 function renderModelControls(game) {
   const providers = catalog.providers;
   $('provider-buttons').innerHTML = providers.map(p =>
-    `<button data-provider="${esc(p)}" class="${p === choice.provider ? 'selected' : ''}">${esc(p)}<span>${p === 'jev' ? 'API' : p === 'laya-mlx' ? 'GPU' : 'LOCAL'}</span></button>`).join('');
+    `<button data-provider="${esc(p)}" aria-pressed="${p === choice.provider}" class="${p === choice.provider ? 'selected' : ''}">${esc(providerName(p))}<span>${p === 'jev' ? '온라인 API' : p === 'laya-mlx' ? '이 기기 · GPU' : '이 기기 · 로컬'}</span></button>`).join('');
   $('shadow-boxes').innerHTML = providers.map(p =>
     `<label class="check ${p === choice.provider ? 'muted' : ''}"><input type="checkbox" data-shadow="${esc(p)}" ${choice.shadows.includes(p) ? 'checked' : ''} ${p === choice.provider ? 'disabled' : ''}><span>${esc(p)}</span></label>`).join('');
   $('policy-field').hidden = !game?.has_policy;
   $('policy').checked = choice.policy;
   $('api-key').closest('label').classList.toggle('dim', choice.provider !== 'jev' && !choice.shadows.includes('jev'));
+  renderAdvancedSummary();
+  renderProviderExplainer();
+}
+
+function renderAdvancedSummary() {
+  const shadows = choice.shadows.filter(p => p !== choice.provider);
+  $('advanced-summary').textContent = `비교 모델 ${shadows.length ? shadows.join(', ') : '없음'} · 보조 규칙 ${choice.policy ? '켜짐' : '꺼짐'} · 추가 대기 ${Number($('decision-delay').value)} ms`;
+}
+
+function renderProviderExplainer() {
+  const provider = choice.provider;
+  const game = connectedGame() || selectedGame();
+  const requested = game?.providers?.models?.[provider] || '기본 모델';
+  const explanation = provider === 'jev'
+    ? '상태와 질문을 HTTPS로 보냅니다. 응답 시간에는 네트워크와 서버 대기가 포함됩니다.'
+    : `${provider === 'laya-mlx' ? 'MLX' : 'PyTorch'}로 이 컴퓨터에서 평가합니다. 처음 호출할 때 가중치 로딩이 응답 시간에 포함될 수 있습니다.`;
+  $('provider-explainer').innerHTML = `<b>${esc(providerName(provider || '모델 선택'))}</b><span>${esc(requested)}</span><p>${esc(explanation)}</p>`;
+}
+
+function updateComparisonControls(data) {
+  const a = $('compare-a').value, b = $('compare-b').value;
+  const connected = data?.connection?.status === 'connected';
+  const needsKey = [a, b].includes('jev') && !data?.key_set;
+  $('compare').disabled = !connected || !!data?.busy || a === b || needsKey;
+  $('compare-a').disabled = $('compare-b').disabled = !!data?.busy;
+  $('compare-note').textContent = a === b ? '서로 다른 두 모델을 선택하세요.' : needsKey
+    ? 'Jev API 키가 필요합니다. 키 없이도 Laya 단독 실행이나 Laya-MLX와의 비교를 할 수 있습니다.'
+    : !connected ? '게임을 연결하면 같은 관찰로 비교할 수 있습니다.'
+    : data?.activity === 'compare' ? '같은 입력으로 두 응답을 기다립니다. 게임에는 입력하지 않습니다.'
+    : '보조 규칙과 추가 지연을 끄고 두 모델의 원래 응답을 비교합니다.';
 }
 
 function modelPayload() {
   const key = $('api-key').value.trim();
-  return {provider: choice.provider, shadows: choice.shadows.filter(p => p !== choice.provider), policy: choice.policy, ...(key ? {key} : {})};
+  return {provider: choice.provider, shadows: choice.shadows.filter(p => p !== choice.provider), policy: choice.policy,
+    decision_delay_ms: Number($('decision-delay').value), ...(key ? {key} : {})};
 }
 
 function setupControls() {
-  $('game').addEventListener('change', onGameChange);
-  $('interface').addEventListener('change', renderRunHow);
-  $('connect').addEventListener('click', () => command('/api/connect', {
-    game: $('game').value, interface: $('interface').value, dry_run: $('dry-run').checked, agent: $('agent').value}));
+  window.DecisionLearning?.init();
+  ['compare-a', 'compare-b'].forEach(id => $(id).addEventListener('change', () => updateComparisonControls(latest)));
+  $('compare').addEventListener('click', () => command('/api/compare', {providers: [$('compare-a').value, $('compare-b').value]}));
+  $('stop').addEventListener('click', () => command('/api/auto', {enabled: false}));
+  document.querySelector('.glossary-link').addEventListener('click', () => { $('glossary').open = true; });
+  document.querySelector('.play-modes').addEventListener('click', event => {
+    const button = event.target.closest('[data-lesson]');
+    if (!button || button.disabled) return;
+    selectPlayMode(button.dataset.lesson);
+    document.querySelector('.lesson-guide').open = true;
+    if (lesson === 'socket') $('learning-question-step').open = true;
+  });
+  $('latency-tool').addEventListener('click', () => {
+    $('advanced-settings').open = true;
+    $('advanced-settings').scrollIntoView({block: 'center'});
+  });
+  $('game').addEventListener('change', () => onGameChange());
+  $('target').addEventListener('change', () => { windowPreparationError = ''; rememberTargetPreference(); renderRunHow(); });
+  $('prepare-window').addEventListener('click', prepareGameWindow);
+  $('control-routes').addEventListener('click', event => {
+    const button = event.target.closest('[data-route]');
+    if (button && !button.disabled) selectControlRoute(button.dataset.route);
+  });
+  $('connection-json').addEventListener('input', () => { rememberTargetPreference(); renderWindowPreparation(); });
+  $('socket-path').addEventListener('input', rememberTargetPreference);
+  $('timing-settings').addEventListener('input', rememberTargetPreference);
+  $('dry-run').addEventListener('change', () => { renderControlRoutes(); renderSurface(); });
+  $('connect').addEventListener('click', () => {
+    const item = selectedInterface();
+    if (!item) return;
+    try {
+      const payload = connectionPayload();
+      $('connection-settings-error').textContent = '';
+      command('/api/connect', payload);
+    } catch (error) {
+      $('connection-settings-error').textContent = error.message;
+      showMessage(error.message, true);
+    }
+  });
+  const switchTab = tab => {
+    document.querySelectorAll('[data-tab]').forEach(button => {
+      const selected = button.dataset.tab === tab;
+      button.classList.toggle('selected', selected);
+      button.setAttribute('aria-selected', String(selected));
+      button.tabIndex = selected ? 0 : -1;
+      $(`panel-${button.dataset.tab}`).hidden = !selected;
+    });
+  };
+  document.querySelector('.trace-tabs').addEventListener('click', event => {
+    const button = event.target.closest('[data-tab]');
+    if (button) switchTab(button.dataset.tab);
+  });
+  document.querySelector('.trace-tabs').addEventListener('keydown', event => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    const buttons = [...document.querySelectorAll('[data-tab]')];
+    const index = buttons.indexOf(document.activeElement);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 :
+      (index + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
+    event.preventDefault();
+    switchTab(buttons[next].dataset.tab);
+    buttons[next].focus();
+  });
   $('disconnect').addEventListener('click', () => command('/api/disconnect', {}));
   $('provider-buttons').addEventListener('click', event => {
     const button = event.target.closest('[data-provider]');
@@ -224,7 +709,8 @@ function setupControls() {
     choice.shadows = event.target.checked ? [...new Set([...choice.shadows, p])] : choice.shadows.filter(x => x !== p);
     renderModelControls(connectedGame() || selectedGame());
   });
-  $('policy').addEventListener('change', event => { choice.policy = event.target.checked; });
+  $('policy').addEventListener('change', event => { choice.policy = event.target.checked; renderAdvancedSummary(); });
+  $('decision-delay').addEventListener('change', renderAdvancedSummary);
   $('api-key').addEventListener('change', event => {
     if (event.target.value.trim()) command('/api/key', {key: event.target.value.trim()});
   });
@@ -248,7 +734,7 @@ function setupControls() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${latest?.connection?.game || 'game'}-decisions.json`;
+      link.download = `${latest?.connection?.game || 'game'}-${latest?.connection?.target?.version || 'default'}-decisions.json`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) { showMessage(error.message, true); }
@@ -260,34 +746,56 @@ function setupControls() {
 
 // Connection, health and build -------------------------------------------------
 
+function manualActionButtons(game) {
+  return (game?.options || []).map(action => {
+    const label = game.learning?.actions?.[action] || action;
+    return `<button data-action="${esc(action)}" title="${esc(action)}" aria-label="${esc(label)} (${esc(action)})">${esc(label)}</button>`;
+  }).join('');
+}
+
 function updateConnection(data) {
+  if (Array.isArray(data.game_windows)) {
+    preparedWindows.clear();
+    data.game_windows.forEach(item => preparedWindows.set(`${item.game}/${item.version}`, item));
+  }
+  syncPreparedTarget(data);
   const c = data.connection;
   const connected = c.status === 'connected';
-  const text = {disconnected: '연결 안 됨', connecting: `${c.game} 연결 중…`, connected: `${c.game} · ${c.interface} (${c.connector})`, error: `${c.game || ''} 연결 문제`}[c.status];
+  const text = {disconnected: '연결 안 됨', connecting: `${c.game} 연결 중…`, connected: `${c.game} / ${c.target?.version} · ${c.interface}`, error: `${c.game || ''} 연결 문제`}[c.status];
   $('connection-text').textContent = text;
   document.querySelector('.pulse').classList.toggle('off', !connected);
   document.querySelector('.pulse').classList.toggle('wait', c.status === 'connecting');
   const linked = connected || c.status === 'connecting';
-  ['game', 'interface', 'dry-run', 'agent'].forEach(id => { $(id).disabled = linked; });
-  $('connect').disabled = linked;
+  ['game', 'target', 'socket-path', 'dry-run', 'agent', 'connection-json'].forEach(id => { $(id).disabled = linked; });
+  document.querySelectorAll('[data-setting]').forEach(input => { input.disabled = linked; });
+  $('connect').disabled = linked || !selectedInterface();
   $('disconnect').disabled = c.status === 'disconnected';
 
-  const key = connected ? `${c.game}/${c.interface}` : '';
+  const key = connected ? `${c.game}/${c.target?.version}/${c.interface}` : '';
   if (key !== lastConnectedKey) {
     lastConnectedKey = key;
     lastViewSignature = '';
     if (connected) {
       $('game').value = c.game;
-      onGameChange();
-      $('interface').value = c.interface;
-      renderRunHow();
+      onGameChange(`${c.target.version}/${c.interface}`);
+      renderConnectionSettings(c.settings);
+      document.querySelectorAll('[data-setting]').forEach(input => { input.disabled = true; });
+      if (data.runtime.socket) $('socket-path').value = data.runtime.socket;
+      $('dry-run').checked = !!data.options.dry_run;
+      $('agent').value = data.options.agent || 'app';
+      const delay = String(data.options.decision_delay_ms || 0);
+      if (![...$('decision-delay').options].some(option => option.value === delay)) {
+        $('decision-delay').add(new Option(`${Number(delay).toLocaleString()} ms · 현재 대기`, delay));
+      }
+      $('decision-delay').value = delay;
       if (data.options.provider) {
         choice = {provider: data.options.provider, shadows: data.options.shadows, policy: data.options.policy};
         renderModelControls(connectedGame());
       }
+      renderAdvancedSummary();
     }
     const game = connectedGame();
-    $('manual-actions').innerHTML = connected && game ? game.options.map(a => `<button data-action="${esc(a)}">${esc(a)}</button>`).join('') : '<span class="meta">연결하면 이 게임의 선택지가 나옵니다</span>';
+    $('manual-actions').innerHTML = connected && game ? manualActionButtons(game) : '<span class="meta">게임을 연결하면 실행할 행동이 표시됩니다</span>';
     const scenarios = c.scenarios || [];
     $('scenario').innerHTML = '<option value="">다음 상황</option>' + scenarios.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
     $('scenario-field').hidden = !scenarios.length;
@@ -295,14 +803,20 @@ function updateConnection(data) {
     const kbm = connected && c.connector === 'kbm';
     $('kbm-warning').hidden = !kbm;
     $('kbm-warning').innerHTML = !kbm ? '' : data.options.dry_run
-      ? '<b>DRY-RUN</b>화면은 읽지만 키보드·마우스 입력은 보내지 않습니다. 실제로 조작하려면 연결을 끊고 DRY-RUN을 끈 뒤 다시 연결하세요.'
+      ? '<b>입력 미리보기</b>화면을 읽고 판단을 기록합니다. 실제 조작은 연결을 끊고 입력 미리보기를 해제한 뒤 다시 연결하면 시작됩니다.'
       : '<b>실제 입력</b>게임 창에 키보드·마우스 입력을 보냅니다. 멈추려면 마우스를 화면 왼쪽 위 모서리로 옮기세요.';
   }
+  const check = c.version_check;
+  $('version-check').className = `version-check ${check?.status === 'verified' ? 'good' : check?.status === 'mismatch' || c.status === 'error' ? 'bad' : 'warn'}`;
+  $('version-check').textContent = check ? `${check.status === 'verified' ? '✓ 버전 일치' : check.status === 'mismatch' ? '버전 불일치' : '실행 버전 미확인'} · ${check.message}` :
+    c.status === 'error' ? c.error : c.status === 'connecting' ? '실행 중인 게임 버전을 확인하는 중…' : '연결 후 게임이 보고한 버전과 비교합니다.';
 
   const perms = c.permissions && typeof c.permissions === 'object' && !c.permissions.error
     ? Object.entries(c.permissions).map(([name, ok]) => `${ok ? '✓' : '!'} ${name}`).join(' · ') : '';
   $('permissions').textContent = c.status === 'error' ? c.error : [perms, c.halted ? '입력 멈춤: ' + c.halted : ''].filter(Boolean).join(' · ');
   $('permissions').classList.toggle('bad', c.status === 'error' || !!c.halted);
+  renderControlRoutes();
+  renderSurface();
 }
 
 function card(id, state, title, detail) {
@@ -332,18 +846,19 @@ function updateHealth(data) {
     const item = selectedInterface();
     const run = item?.run;
     card('card-process', c.status === 'connecting' ? 'wait' : '', c.status === 'connecting' ? '시작하는 중…' : '연결 안 됨',
-      run?.mode === 'launch' ? '연결하면 콘솔이 실행합니다' : run?.mode === 'attach' ? '이미 떠 있는 게임에 붙습니다' : run?.mode === 'window' ? '게임 창을 찾습니다' : '');
+      run?.mode === 'launch' ? '연결하면 콘솔이 실행합니다' : run?.mode === 'attach' ? '실행 중인 게임에 연결합니다' : run?.mode === 'window' ? '게임 창을 찾습니다' : '');
     card('card-link', '', '—', '연결하면 응답 시간이 표시됩니다');
     const [title, detail] = run?.mode === 'launch' ? buildHtml(run.build, ' · 연결 전 미리보기') :
-      run?.mode === 'window' ? buildHtml(run.agent_build && {kind: 'binary', ...run.agent_build}, ' · KbmAgent') : ['—', '이미 떠 있는 게임은 연결 후에 확인합니다'];
+      run?.mode === 'window' ? buildHtml(run.agent_build && {kind: 'binary', ...run.agent_build}, ' · KbmAgent') : ['—', '실행 중인 게임 정보는 연결 후 확인합니다'];
     card('card-build', '', title, detail);
     return;
   }
   // Process
   const uptime = h.started_at ? duration(serverNow() - h.started_at) : '';
   if (r.mode === 'attach') {
+    const address = r.endpoint ? `${r.endpoint.host}:${r.endpoint.port}` : r.socket;
     card('card-process', c.status === 'error' ? 'bad' : 'good', c.status === 'error' ? '응답 없음' : '외부에서 실행 중',
-      `콘솔이 띄운 게임이 아니라 PID를 모릅니다<br><code>${esc(r.socket)}</code>`);
+      `외부에서 실행한 게임으로, 프로세스 ID를 확인할 수 없습니다<br><code>${esc(address)}</code>`);
   } else if (h.alive === false) {
     card('card-process', 'bad', `종료됨 (exit ${esc(h.exit_code)})`, `PID ${esc(h.pid)} · ${esc(c.error || '')}`);
   } else if (r.mode === 'window') {
@@ -364,8 +879,8 @@ function updateHealth(data) {
     (h.last_error ? `<br><span class="${h.failures ? 'bad' : 'warn'}">${esc(h.last_error)}</span>` : ''));
   // Build
   let [btitle, bdetail] = r.mode === 'window'
-    ? (r.window_build?.exists ? buildHtml({kind: 'binary', ...r.window_build}, ' · 게임 창의 앱') : ['게임 빌드 정보 없음', 'kbm은 게임을 띄우지 않으므로, 창을 찾으면 그 프로세스의 실행 파일을 표시합니다'])
-    : r.mode === 'attach' ? ['외부에서 실행한 게임', '콘솔이 띄우지 않아 빌드 파일을 모릅니다. 게임이 info에 build를 보내면 아래에 표시됩니다.']
+    ? (r.window_build?.exists ? buildHtml({kind: 'binary', ...r.window_build}, ' · 게임 창의 앱') : ['게임 빌드 정보 없음', '게임 창을 찾으면 해당 프로세스의 실행 파일을 표시합니다'])
+    : r.mode === 'attach' ? ['외부에서 실행한 게임', '외부에서 실행한 게임입니다. 게임이 보고한 빌드 정보 (info.build)가 있으면 아래에 표시합니다.']
     : buildHtml(r.build);
   if (r.mode === 'window' && r.agent_build) bdetail += `<br>KbmAgent: ${esc(r.agent_build.path)}${r.agent_build.built_at ? ' · 빌드 ' + esc(r.agent_build.built_at.replace('T', ' ')) : ''}`;
   if (r.game_build) bdetail += `<br>게임이 알려 준 빌드: <code>${esc(JSON.stringify(r.game_build))}</code>`;
@@ -399,7 +914,7 @@ function updateObserved(data) {
   if (signature === lastViewSignature) return;
   lastViewSignature = signature;
   const render = GameViews.views[game.id];
-  $('view-kind').textContent = render ? `games/${game.id}/view.js` : 'view.js 없음 · 상태 표';
+  $('view-kind').textContent = data.connection.connector === 'kbm' ? '화면에서 읽은 데이터 · 캡처는 위에 표시' : data.connection.target?.display === 'visible' ? '데이터 도식 · 실제 플레이는 별도 게임 창' : data.connection.target?.display === 'headless' ? '데이터 도식 · 게임 창 없음' : '데이터 도식 · 게임 창 정보 없음';
   let html;
   try {
     html = render ? render(o.state, {...viewHelpers, truth: o.truth, options: game.options, done: o.done}) : genericView(o.state);
@@ -409,34 +924,68 @@ function updateObserved(data) {
   holder.innerHTML = (o.done ? '<div class="gv-done">판 끝</div>' : '') + html;
   applyWidths(holder);
   $('state-text').textContent = o.description || pretty(o.state);
-  $('truth').textContent = o.truth ? pretty(o.truth) : '이 게임은 정답을 보내지 않습니다.';
+  $('truth').textContent = o.truth ? (o.reference_kind === 'instructional_rules' ? '교육용 규칙 기준입니다. 최적 행동의 증명이 아닙니다.\n' : '') + pretty(o.truth) : '이 게임은 채점 기준을 보내지 않습니다.';
 }
 
 async function updateFrame(data) {
   const kbm = data.connection.connector === 'kbm' && data.connection.status === 'connected';
   $('frame-box').hidden = !kbm;
-  if (!kbm || !data.frame_at || data.frame_at === lastFrameAt) return;
-  lastFrameAt = data.frame_at;
+  if (!kbm || !data.frame_at) {
+    if (frameUrl) URL.revokeObjectURL(frameUrl);
+    frameUrl = null;
+    lastFrameAt = null;
+    $('frame').removeAttribute('src');
+    $('frame').hidden = true;
+    $('frame-note').textContent = kbm ? '아직 캡처가 없습니다. 연결된 게임 창을 관찰하면 실제 캡처가 표시됩니다.' : '';
+    return;
+  }
+  if (data.frame_at === lastFrameAt) return;
   try {
     const blob = await api('/api/frame');
+    if (latest && (latest.connection.status !== 'connected' || latest.connection.connector !== 'kbm' || latest.frame_at !== data.frame_at)) return;
     if (frameUrl) URL.revokeObjectURL(frameUrl);
     frameUrl = URL.createObjectURL(blob);
     $('frame').src = frameUrl;
+    $('frame').hidden = false;
+    lastFrameAt = data.frame_at;
     $('frame-note').textContent = `KbmAgent가 캡처한 화면 · ${new Date(data.frame_at * 1000).toLocaleTimeString()}`;
   } catch (error) { $('frame-note').textContent = error.message; }
+}
+
+function updateInputTrace(data) {
+  const row = data.rows?.[0];
+  const trace = data.input_trace || row?.input_trace;
+  const holder = $('input-trace');
+  if (!trace) {
+    $('input-trace-note').textContent = row ? '이 기록에는 전송 명령이 없습니다. 판단 결과만으로 입력 실행을 추정하지 않습니다.' : '판단 또는 직접 조작을 실행하면 기록이 표시됩니다.';
+    holder.innerHTML = '<div class="empty">아직 전송 기록이 없습니다.</div>';
+    return;
+  }
+  const result = trace.result || {};
+  const cancelled = result.cancelled || result.stale;
+  const kbm = trace.connector === 'kbm';
+  const confirmed = result.application_confirmed === true || (!kbm && result.applied);
+  const label = result.dry_run ? '입력 미리보기 · 실제 입력 없음' : cancelled ? '입력 취소 · 폐기' :
+    result.error || result.ok === false ? (kbm && result.input_sent ? '키마 전송 후 오류 · 게임 적용 미확인' : '입력 실패') :
+    confirmed ? '게임 적용 확인' : kbm && result.input_sent ? '키마 입력 전송 · 게임 적용 미확인' :
+    kbm && result.applied ? '키마 처리 완료 · 게임 적용 미확인' : '입력 미적용';
+  $('input-trace-note').textContent = `${connectorLabels[trace.connector] || trace.connector || '인터페이스'} · ${label}`;
+  holder.innerHTML = `<div class="input-trace-choice"><span>선택한 행동</span><b>${esc(trace.action ?? '없음')}</b><span class="${cancelled ? 'warn' : confirmed && !result.dry_run ? 'good' : ''}">${esc(label)}</span></div>` +
+    `<div class="input-trace-columns"><div><h3>전송 명령</h3><pre>${esc(trace.command == null ? '전송한 명령 없음' : pretty(trace.command))}</pre></div><div><h3>실제 처리 응답</h3><pre>${esc(pretty(result))}</pre></div></div>` +
+    (trace.mapped_command != null ? `<details class="state-details"><summary>설정에 정의된 행동 매핑 <span>전송 여부는 위의 명령·응답으로 확인</span></summary><pre class="state-box">${esc(pretty(trace.mapped_command))}</pre></details>` : '');
 }
 
 // Pipeline and model calls ------------------------------------------------------
 
 function updatePipeline(data) {
   const phase = data.phase || {};
-  const steps = ['게임 관찰', '모델 판단', '행동 전송'];
+  const steps = ['모델 준비', '게임 관찰', '모델 판단', ...(data.activity === 'compare' ? ['비교 기록'] : ['행동 전송'])];
   const active = data.connection.status === 'connected' && phase.busy;
   const elapsed = phase.since ? Math.max(0, serverNow() - phase.since) : 0;
   const running = (data.calls || []).filter(c => !c.finished_at);
   $('pipeline').innerHTML = `<div class="pipe-steps">${steps.map(s => `<span class="pipe-step ${active && phase.name === s ? 'on' : ''}">${esc(s)}</span>`).join('<i>→</i>')}</div>` +
     `<div class="pipe-now">${active ? `지금: <b>${esc(phase.name)}</b> · ${elapsed.toFixed(1)}초째` : data.connection.status === 'connected' ? `대기 중${data.auto ? ' · 자동 플레이' : ''}` : '연결 안 됨'}</div>` +
-    running.map(c => `<div class="pipe-call"><span class="role ${esc(c.role)}">${esc(c.role)}</span><b>${esc(c.provider)}</b> ${esc(c.model || '')} · ${esc(c.runtime || '')}<em>${(serverNow() - c.started_at).toFixed(1)}s</em></div>`).join('');
+    running.map(c => `<div class="pipe-call"><span class="role ${esc(c.role)}">${esc(c.role === 'live' ? (c.comparison ? '비교 기준 모델' : '제어 모델') : c.role === 'shadow' ? '비교 모델' : c.role)}</span><b>${esc(c.provider)}</b> ${esc(c.model || '')} · ${esc(c.runtime || '')}<em>${(serverNow() - c.started_at).toFixed(1)}초</em></div>`).join('');
 }
 
 function usageText(usage) {
@@ -452,6 +1001,7 @@ function callRequestJson(call) {
 
 function updateCalls(data) {
   const calls = data.calls || [];
+  $('call-count').textContent = String(calls.length);
   const game = connectedGame();
   const signature = JSON.stringify(calls.map(c => [c.id, c.finished_at]));
   if (signature === lastCallsSignature) return;
@@ -464,9 +1014,9 @@ function updateCalls(data) {
     const status = !done ? '<span class="warn">진행 중</span>' : c.status === 'ok' ? `→ <b>${esc(c.action)}</b>` : `<span class="bad">${esc(c.error)}</span>`;
     const usage = usageText(c.usage);
     return `<details class="call ${done ? '' : 'running'} ${c.status && c.status !== 'ok' ? 'failed' : ''}" data-call="${c.id}" ${openCalls.has(String(c.id)) ? 'open' : ''}>
-      <summary><span class="role ${esc(c.role)}">${esc(c.role)}</span><b>${esc(c.provider)}</b><span class="call-model">${esc(c.model || '')}</span>${status}<em class="${over ? 'bad' : ''}">${done ? `${Math.round(c.ms)} ms${over ? ' · 예산 초과' : ''}` : ''}</em></summary>
+      <summary><span class="role ${esc(c.role)}">${esc(c.role === 'live' ? (c.comparison ? '비교 기준 모델' : '제어 모델') : c.role === 'shadow' ? '비교 모델' : c.role)}</span><b>${esc(c.provider)}</b><span class="call-model">${esc(c.model || '')}</span>${status}<em class="${over ? 'bad' : ''}">${done ? `${Math.round(c.ms)} ms${over ? ' · 목표 초과' : ''}` : ''}</em></summary>
       <div class="call-body">
-        <div class="call-meta">${esc(c.runtime || '')}${c.endpoint ? ` · <code>${esc(c.endpoint)}</code>` : ''} · 입력 ${esc(c.input_chars)}자${c.routed_model ? ` · 응답 모델 ${esc(c.routed_model)}` : ''}${c.confidence !== undefined && c.confidence !== null ? ` · 신뢰도 ${esc(c.confidence)}` : ''}${usage ? ` · ${esc(usage)}` : ''}</div>
+        <div class="call-meta">${esc(c.runtime || '')}${c.endpoint ? ` · <code>${esc(c.endpoint)}</code>` : ''} · 입력 ${esc(c.input_chars)}자${c.routed_model ? ` · 응답 모델 ${esc(c.routed_model)}` : ''}${c.confidence !== undefined && c.confidence !== null ? ` · 분포 집중도 ${esc(c.confidence)}` : ''}${usage ? ` · ${esc(usage)}` : ''}</div>
         <div class="call-cols"><div><small>보낸 요청</small><pre>${esc(callRequestJson(c))}</pre></div><div><small>받은 응답</small><pre>${esc(done ? JSON.stringify(c.response ?? {error: c.error}, null, 2) : '기다리는 중…')}</pre></div></div>
       </div></details>`;
   }).join('');
@@ -483,12 +1033,12 @@ function answerLines(answers, grade, questions) {
     const g = (grade || {})[qid];
     if (q.type === 'score') {
       const top = (q.criteria || []).length - 1;
-      const truth = g && !g.status ? ` <em class="${g.exact ? 'good' : 'bad'}">정답 ${esc(g.truth)} · 오차 ${num(g.abs_error)}</em>` : '';
-      return `<div class="answer"><span>${esc(qid)}</span><b>${num(a.score)} / ${top}</b>${truth}</div>`;
+      const truth = g && !g.status ? ` <em class="${g.exact ? 'good' : 'bad'}">기준 ${esc(g.truth)} · 점수 오차 ${num(g.abs_error)}</em>` : '';
+      return `<div class="answer"><span>점수 평가 (Score) · ${esc(qid)}</span><b>${num(a.score)} / ${top}</b>${truth}</div>`;
     }
-    const truthLabel = g && !g.status ? (typeof g.truth === 'boolean' ? (g.truth ? '참' : '거짓') : num(g.truth)) : null;
-    const truth = truthLabel !== null ? ` <em class="${g.correct ? 'good' : 'bad'}">정답 ${truthLabel} · Brier ${num(g.brier, 3)}</em>` : '';
-    return `<div class="answer"><span>${esc(qid)}</span><b>${pct(a.noul)}</b>${truth}</div>`;
+    const truthLabel = g && !g.status ? (typeof g.truth === 'boolean' ? (g.truth ? '참' : '거짓') : pct(g.truth)) : null;
+    const truth = truthLabel !== null ? ` <em class="${g.correct ? 'good' : 'bad'}">기준 ${truthLabel} · 확률 오차 (Brier) ${num(g.brier, 3)}</em>` : '';
+    return `<div class="answer"><span>확률 예측 (Noul) · ${esc(qid)}</span><b>${pct(a.noul)}</b>${truth}</div>`;
   }).join('');
 }
 
@@ -498,25 +1048,34 @@ function liveBlock(row, game) {
   const truthActions = row.grade?.action?.truth || [];
   const over = game.latency_budget_ms && d.model_ms > game.latency_budget_ms;
   const bars = game.options.map(option => {
-    const value = Math.max(0, Math.min(1, Number(d.probabilities?.[option] || 0)));
+    const raw = d.probabilities?.[option];
+    const known = typeof raw === 'number' && Number.isFinite(raw);
+    const value = known ? Math.max(0, Math.min(1, raw)) : 0;
     const winner = d.action === option;
     const sent = row.action === option && row.action !== d.action;
-    return `<div class="choice-row ${winner ? 'winner' : ''} ${sent ? 'sent' : ''}"><span>${esc(option)}${truthActions.includes(option) ? ' <i class="good">✓</i>' : ''}</span><div class="choice-track"><div class="choice-fill" data-w="${value * 100}"></div></div><span class="score">${(value * 100).toFixed(0)}%</span></div>`;
+    return `<div class="choice-row ${winner ? 'winner' : ''} ${sent ? 'sent' : ''}"><span>${esc(option)}${truthActions.includes(option) ? ' <i class="good">✓</i>' : ''}</span><div class="choice-track"><div class="choice-fill" data-w="${value * 100}"></div></div><span class="score">${known ? (value * 100).toFixed(0) + '%' : '—'}</span></div>`;
   }).join('');
-  return `<div class="model-block"><div class="model-name"><span>LIVE · ${esc(d.provider.toUpperCase())}</span><span class="${over ? 'bad' : ''}">${esc(Math.round(d.model_ms))} ms${over ? ' · 예산 초과' : ''}</span></div>${bars}${answerLines(d.answers, row.grade, game.questions)}</div>`;
+  return `<div class="model-block"><div class="model-name"><span>${row.comparison ? '비교 기준 모델' : '제어 모델'} · ${esc(d.provider.toUpperCase())}</span><span class="${over ? 'bad' : ''}">${esc(Math.round(d.model_ms))} ms${over ? ' · 목표 초과' : ''}</span></div>${row.reference_kind === 'instructional_rules' ? '<p class="field-note">아래 채점은 교육용 규칙과의 일치 여부입니다.</p>' : ''}${bars}${answerLines(d.answers, row.grade, game.questions)}</div>`;
 }
 
-function shadowBlock(s, game) {
-  if (s.status !== 'ok') return `<div class="shadow-line"><b>${esc(s.provider)}</b><span class="bad">${esc(s.status === 'timeout' ? '시간 초과 (틱 안에 답하지 못함)' : s.error)}</span></div>`;
+function shadowBlock(s, game, comparison = false) {
+  if (s.status !== 'ok') return `<div class="shadow-line"><b>${esc(s.provider)}</b><span class="bad">${esc(s.status === 'timeout' ? '대기 시간 초과 (이번 판단에 응답 미포함)' : s.error)}</span></div>`;
   const correct = s.grade?.action?.correct;
-  return `<div class="model-block secondary-block"><div class="model-name secondary"><span>SHADOW · ${esc(s.provider.toUpperCase())} → ${esc(s.action)} ${correct === undefined ? '' : correct ? '✓' : '✗'}</span><span>${s.agrees ? 'live와 같음' : 'live와 다름'} · ${esc(Math.round(s.model_ms))} ms</span></div>${answerLines(s.answers, s.grade, game.questions)}</div>`;
+  return `<div class="model-block secondary-block"><div class="model-name secondary"><span>비교 모델 · ${esc(s.provider.toUpperCase())} → ${esc(s.action)} ${correct === undefined ? '' : correct ? '✓' : '✗'}</span><span>${s.agrees ? (comparison ? '기준 모델과 같음' : '최종 행동과 같음') : (comparison ? '기준 모델과 다름' : '최종 행동과 다름')} · ${esc(Math.round(s.model_ms))} ms</span></div>${answerLines(s.answers, s.grade, game.questions)}</div>`;
 }
 
 function rowBadge(row) {
-  if (row.analysis_only) return ['ANALYSIS ONLY', '게임 상태 유지', ''];
-  if (row.applied) return ['GAME ACTION', '게임에 적용됨', ''];
-  if (row.stale) return ['STALE', row.error || '판단 중 상황이 바뀜', 'warn'];
-  return ['NOT APPLIED', row.error || '적용 안 됨', 'error'];
+  if (row.comparison) return ['같은 관찰 비교', '두 모델의 응답만 기록 · 게임 입력 없음', ''];
+  if (row.analysis_only) return ['판단만 기록', '게임에 입력을 보내지 않음', ''];
+  if (row.cancelled) return ['입력 취소', '중지 요청으로 입력 취소', 'warn'];
+  if (row.input_trace?.result?.dry_run) return ['입력 미리보기', '실제 키보드·마우스 입력 없음', ''];
+  if (row.stale) return ['입력 취소', row.error || '관찰이 오래되었거나 게임 상황이 바뀜', 'warn'];
+  if (row.input_trace?.connector === 'kbm' && row.input_trace.result?.application_confirmed !== true) {
+    if (row.input_trace.result?.input_sent) return ['키마 입력 전송', row.error ? '전송 후 오류 · 게임 적용 미확인' : '게임 적용 미확인', row.error ? 'error' : ''];
+    if (row.applied) return ['키마 처리 완료', '게임 적용 미확인', ''];
+  }
+  if (row.applied) return ['게임 적용 확인', '게임이 행동 적용을 보고함', ''];
+  return ['입력 미적용', row.error || '게임에 행동을 적용하지 못함', 'error'];
 }
 
 function updateDecisions(data) {
@@ -526,26 +1085,26 @@ function updateDecisions(data) {
   lastRowsSignature = signature;
   $('decision-count').textContent = String(data.steps);
   const holder = $('decisions');
-  if (!data.rows.length || !game) { holder.innerHTML = '<div class="empty">모델을 실행하면 질문별 판단과 정답이 이곳에 쌓입니다.</div>'; return; }
+  if (!data.rows.length || !game) { holder.innerHTML = '<div class="empty">모델을 실행하면 판단 결과와 채점 기준이 이곳에 표시됩니다.</div>'; return; }
   holder.innerHTML = data.rows.map(row => {
     const [badge, note, kind] = rowBadge(row);
     const ok = row.decision.status === 'ok';
-    const correct = row.grade?.action?.correct;
+    const correct = row.final_correct;
     const policy = row.policy || {};
-    const override = policy.override ? ` · policy ${esc(policy.override.rule)}: ${esc(policy.override.from)} → ${esc(policy.override.to)}` : '';
-    const fired = !policy.override && policy.fired?.length ? ` · policy 발동(기록만): ${esc(policy.fired.join(', '))}` : '';
-    const title = ok ? `${esc(row.decision.provider.toUpperCase())} → ${esc(row.action)} ${correct === undefined ? '' : correct ? '<i class="good">✓</i>' : '<i class="bad">✗</i>'}` : '모델 호출 실패';
-    return `<article class="decision-card ${ok ? 'primary' : 'error'} ${kind}"><div class="decision-head"><span class="decision-turn">${isRealtime(game) ? 'TICK' : 'STEP'} ${String(row.step).padStart(2, '0')}</span><span>판 ${row.episode + 1} · ${badge}</span><span>${esc(Math.round(row.loop_ms))} ms</span></div><div class="decision-summary"><strong>${title}</strong><span>${esc(note)}${override}${fired}</span></div>${liveBlock(row, game)}${(row.shadow || []).map(s => shadowBlock(s, game)).join('')}</article>`;
+    const override = policy.override ? ` · 보조 규칙 ${esc(policy.override.rule)}: ${esc(policy.override.from)} → ${esc(policy.override.to)}` : '';
+    const fired = !policy.override && policy.fired?.length ? ` · 보조 규칙 발동 (기록만): ${esc(policy.fired.join(', '))}` : '';
+    const title = ok ? `${row.comparison ? '비교 기준 모델의 선택' : row.analysis_only ? '선택한 행동' : '최종 행동'} · ${esc(row.action)} ${correct == null ? '' : correct ? '<i class="good">✓</i>' : '<i class="bad">✗</i>'}` : '모델 호출 실패';
+    return `<article class="decision-card ${ok ? 'primary' : 'error'} ${kind}"><div class="decision-head"><span class="decision-turn">판단 ${String(row.step).padStart(2, '0')}</span><span>${row.episode + 1}번째 게임 · ${badge}</span><span>${esc(Math.round(row.loop_ms))} ms</span></div><div class="decision-summary"><strong>${title}</strong><span>${esc(note)}${override}${fired}</span></div>${liveBlock(row, game)}${(row.shadow || []).map(s => shadowBlock(s, game, row.comparison)).join('')}</article>`;
   }).join('');
   applyWidths(holder);
 }
 
 function summaryText(grades) {
   return Object.entries(grades || {}).map(([qid, s]) => {
-    if (!s.n) return `${qid} 채점 불가`;
-    if (s.type === 'choice') return `${qid} 정답률 ${pct(s.accuracy)}`;
-    if (s.type === 'score') return `${qid} 평균오차 ${num(s.mae)} · 단계일치 ${pct(s.exact)}`;
-    return `${qid} Brier ${num(s.brier, 3)} · 정답률 ${pct(s.accuracy)}`;
+    if (!s.n) return `${esc(qid)} 채점 가능한 응답 없음`;
+    if (s.type === 'choice') return `${esc(qid)} 기준 일치율 ${pct(s.accuracy)}`;
+    if (s.type === 'score') return `${esc(qid)} 평균 점수 오차 ${num(s.mae)} · 단계 일치율 ${pct(s.exact)}`;
+    return `${esc(qid)} 확률 오차 (Brier) ${num(s.brier, 3)} · 참/거짓 일치율 ${pct(s.accuracy)} (50% 기준)`;
   }).join(' &nbsp;·&nbsp; ');
 }
 
@@ -560,26 +1119,38 @@ function updateSummary(data) {
   $('stat-accuracy').textContent = pct(s?.live?.grades?.action?.accuracy);
   const box = $('summary');
   const lines = [];
-  if (s?.live?.grades && Object.keys(s.live.grades).length) lines.push(`<div><b>live ${esc(s.live.provider)}</b>${summaryText(s.live.grades)}</div>`);
-  Object.entries(s?.shadows || {}).forEach(([p, g]) => lines.push(`<div><b>shadow ${esc(p)}</b>${summaryText(g)}</div>`));
-  if (s?.policy && Object.keys(s.policy.fired).length) lines.push(`<div><b>policy</b>${Object.entries(s.policy.fired).map(([k, v]) => `${esc(k)} ${v}회`).join(', ')} · 행동 교체 ${s.policy.overrides}회 (정답으로 ${s.policy.helped}, 오답으로 ${s.policy.hurt})</div>`);
-  if (s?.outcomes?.length) lines.push(`<div><b>판 결과</b>${s.outcomes.map(esc).join(', ')}</div>`);
+  if (s?.live?.grades && Object.keys(s.live.grades).length) lines.push(`<div><b>제어 모델 전체</b>${summaryText(s.live.grades)}</div>`);
+  Object.entries(s?.shadows || {}).forEach(([p, g]) => lines.push(`<div><b>비교 모델 · ${esc(p)}</b>${summaryText(g)}</div>`));
+  if (s?.policy && Object.keys(s.policy.fired).length) lines.push(`<div><b>보조 규칙</b>${Object.entries(s.policy.fired).map(([k, v]) => `${esc(k)} ${v}회`).join(', ')} · 행동 교체 ${s.policy.overrides}회 (기준에 맞게 ${s.policy.helped}회, 기준과 다르게 ${s.policy.hurt}회)</div>`);
+  if (s?.comparisons?.steps) {
+    lines.push(`<div><b>같은 관찰 비교 · ${s.comparisons.steps}회</b>게임 입력 없이 비교한 결과입니다. 제어 모델 성적에 포함하지 않습니다.</div>`);
+    Object.entries(s.comparisons.providers || {}).forEach(([p, entry]) => lines.push(`<div><b>${esc(providerName(p))} · ${entry.count}회 비교</b>${summaryText(entry.grades)}</div>`));
+  }
+  if (s?.outcomes?.length) lines.push(`<div><b>게임 결과</b>${s.outcomes.map(esc).join(', ')}</div>`);
   box.hidden = !lines.length;
   box.innerHTML = lines.join('');
-  $('session-note').textContent = data.session ? `기록: ${data.session}` : '최근 판단이 위에 표시됩니다';
+  $('session-note').textContent = data.session ? `기록 저장 위치: ${data.session}` : '최근 판단이 위에 표시됩니다';
+  updateMeasurements(data);
 }
 
 function updateMeta(data) {
   const c = data.connection;
   const connected = c.status === 'connected';
-  $('key-status').textContent = data.key_set ? '키가 메모리에 설정됨' : '키가 설정되지 않았습니다';
-  $('auto').textContent = data.auto ? '자동 플레이 중지' : '자동 플레이';
+  $('key-status').textContent = data.key_set ? 'API 키 사용 가능 · 메모리에만 보관' : 'Jev를 사용하려면 API 키를 입력하세요';
+  const focusOnRun = !!c.capabilities?.focus && !data.options?.dry_run;
+  $('run').textContent = focusOnRun ? '▶ 게임 창으로 전환하여 1회 실행' : '▶ 1회 실행';
+  $('run').title = focusOnRun ? '시작할 때 선택한 게임 창으로 전환합니다. 판단 중 다른 앱으로 이동하면 입력을 차단합니다.' : '';
+  $('auto').textContent = data.auto ? '자동 플레이 중지' : focusOnRun ? '게임 창에서 자동 플레이' : '자동 플레이';
   const message = data.error || (c.status === 'connecting' ? '게임에 연결하는 중입니다…' :
     c.status === 'error' ? '연결 문제: ' + c.error :
     !connected ? '게임을 고르고 연결하세요.' :
     data.busy ? (data.auto ? '자동 플레이 중 · Esc로 멈춥니다' : '모델이 판단하는 중입니다…') : '연결됨. 모델을 실행하거나 직접 조작해 보세요.');
   showMessage(message, !!data.error || c.status === 'error' || !connected);
   ['run', 'analyze', 'reset', 'scenario'].forEach(id => { $(id).disabled = !connected || data.busy; });
+  $('decision-delay').disabled = !!data.busy;
+  $('stop').hidden = !data.busy;
+  $('run-progress').textContent = data.busy ? `${data.activity === 'compare' ? '같은 관찰 비교' : data.phase?.name || '처리 중'} · ${duration(Math.max(0, serverNow() - (data.phase?.since || serverNow())))} 경과` : '';
+  updateComparisonControls(data);
   $('auto').disabled = !connected || (data.busy && !data.auto);
   document.querySelectorAll('#manual-actions button').forEach(button => { button.disabled = !connected || data.busy; });
   $('events').innerHTML = data.events.map(event => `<div class="event"><time>${esc(event.at)}</time><span>${esc(event.text)}</span></div>`).join('');
@@ -597,11 +1168,13 @@ async function poll() {
     updateObserved(data);
     updateFrame(data);
     updatePipeline(data);
+    updateInputTrace(data);
     updateCalls(data);
     updateDecisions(data);
     updateSummary(data);
     updateMeta(data);
-  } catch (error) { showMessage('WebView 연결 실패: ' + error.message, true); }
+    window.DecisionLearning?.update(data, connectedGame() || selectedGame());
+  } catch (error) { showMessage('대시보드 서버 연결 실패: ' + error.message, true); }
   finally { polling = false; }
 }
 

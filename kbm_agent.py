@@ -5,6 +5,7 @@ permissions belong to KbmAgent.app instead of the terminal.
 """
 
 import argparse
+import json
 import os
 import signal
 import sys
@@ -12,7 +13,7 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
-from game_ipc import GameServer
+from gamelab.protocol import GameServer
 from gamelab.game_case import GameCase
 from kbm.agent import AgentService
 from kbm.macos import DryRunInput, MacPlatform, QuartzInput
@@ -39,6 +40,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--game", required=True)
     parser.add_argument("--interface", required=True, help="games/<game>/interfaces/<name>")
+    parser.add_argument("--version")
+    parser.add_argument("--settings", type=Path, help="이번 연결에 적용할 검증된 JSON 설정")
     parser.add_argument("--games-dir", type=Path, required=True)
     parser.add_argument("--socket", required=True)
     parser.add_argument("--dry-run", action="store_true", help="Record input events instead of sending them")
@@ -52,12 +55,13 @@ def main():
         print("%s %s" % (datetime.now().strftime("%H:%M:%S.%f")[:-3], message), file=log_file, flush=True)
 
     try:
-        game = GameCase(args.game, args.games_dir, interface=args.interface)
+        overrides = json.loads(args.settings.read_text(encoding="utf-8")) if args.settings else None
+        game = GameCase(args.game, args.games_dir, interface=args.interface, version=args.version, overrides=overrides)
     except Exception as exc:
         log("KbmAgent 시작 실패: %s: %s" % (type(exc).__name__, exc))
         raise SystemExit(1)
     window = game.config["window"]
-    agent = AgentService(game, MacPlatform(window["owner"], window.get("title_contains", "")),
+    agent = AgentService(game, MacPlatform(window["owner"], window.get("title_contains", ""), window.get("pid")),
                          DryRunInput() if args.dry_run else QuartzInput())
     server_ref = []
     if os.path.exists(args.socket):

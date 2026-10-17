@@ -1,0 +1,10 @@
+{
+  "interval_ms": 1200,
+  "max_age_ms": 10000,
+  "endpoint": {"host": "127.0.0.1", "port": 8765},
+  "actions": {
+    "attack": {"command": "attack", "target": 0},
+    "guard": {"command": "guard"},
+    "heal": {"command": "heal"}
+  }
+}

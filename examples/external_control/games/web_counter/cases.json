@@ -1,0 +1,6 @@
+[
+  {"id": "below_target", "state": "목표 숫자: 3. 현재 숫자: 0. 아직 완료하지 않았습니다.", "truth": {"action": "increase"}},
+  {"id": "above_target", "state": "목표 숫자: 3. 현재 숫자: 5. 아직 완료하지 않았습니다.", "truth": {"action": "decrease"}},
+  {"id": "at_target", "state": "목표 숫자: 3. 현재 숫자: 3. 아직 완료하지 않았습니다.", "truth": {"action": "confirm"}},
+  {"id": "completed", "state": "목표 숫자: 3. 현재 숫자: 3. 완료했습니다.", "truth": {"action": "wait"}}
+]

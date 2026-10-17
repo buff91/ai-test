@@ -1,7 +1,10 @@
 """Web console against a real sims/ game process, with a scripted model instead of Jev/Laya."""
 
+import threading
 import time
 import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 from web_console import Lab
 
@@ -52,11 +55,11 @@ class WebConsoleTest(unittest.TestCase):
 
     def test_catalog_describes_how_each_interface_runs(self):
         games = {g["id"]: g for g in self.lab.catalog()["games"]}
-        socket = next(i for i in games["arena"]["interfaces"] if i["name"] == "socket")
-        app = next(i for i in games["arena"]["interfaces"] if i["name"] == "app")
+        socket = next(i for i in games["party"]["interfaces"] if i["name"] == "socket")
+        app = next(i for i in games["party"]["interfaces"] if i["name"] == "app")
         self.assertEqual(socket["run"]["mode"], "launch")
-        self.assertEqual(app["run"]["command"], ["dist/ArenaGame/ArenaGame"])
-        self.assertEqual(games["arena"]["default_interface"], "socket")
+        self.assertEqual(app["run"]["command"], ["{python}", "-m", "gamelab.desktop_game", "--game", "party"])
+        self.assertEqual(games["party"]["default_interface"], "socket")
 
     def test_connect_play_reset_manual_disconnect(self):
         status = self.connect()
@@ -111,6 +114,74 @@ class WebConsoleTest(unittest.TestCase):
         self.assertIn("action", live["request"]["questions"])
         self.assertTrue(live["finished_at"] >= live["started_at"])
 
+    def test_turn_game_state_refreshes_while_auto_play_is_waiting_for_model(self):
+        entered = threading.Event()
+        release = threading.Event()
+        calls = 0
+
+        class WaitingDecider(ScriptedDecider):
+            def decide(self, state):
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    entered.set()
+                    if not release.wait(5):
+                        raise TimeoutError("test did not release the model")
+                return super().decide(state)
+
+        self.lab.make_decider = lambda provider, game, key: WaitingDecider(provider, game, "attack")
+        before = self.connect("party")["observed"]["state"]
+        self.lab.run(apply=True, auto=True, provider="laya", shadows=[], policy=False)
+        try:
+            self.assertTrue(entered.wait(5), "second decision did not start")
+            status = self.lab.status()
+            self.assertTrue(status["auto"])
+            self.assertTrue(status["busy"])
+            self.assertEqual(status["phase"]["name"], "모델 판단")
+            self.assertEqual(status["steps"], 1)
+            self.assertEqual(status["observed"]["state"], status["rows"][0]["after_state"])
+            self.assertGreater(status["observed"]["state"]["turn"], before["turn"])
+        finally:
+            self.lab.stop_auto()
+            release.set()
+            self.assertTrue(wait_until(lambda: not self.lab.status()["busy"]))
+
+    def test_busy_kbm_does_not_capture_in_background(self):
+        self.lab.game = SimpleNamespace(connector="kbm", config={"interval_ms": 1})
+        self.lab.client = Mock()
+        self.lab.status_name = "connected"
+        self.lab.busy = True
+        self.lab._refresh()
+        self.lab.client.observe_background.assert_not_called()
+
+    def test_background_result_from_old_connection_is_ignored(self):
+        self.lab.game = SimpleNamespace(connector="socket", config={"interval_ms": 1})
+        self.lab.status_name = "connected"
+        self.lab.busy = True
+        self.lab.observed = {"ok": True, "state": {"turn": 1}}
+
+        def old_observation(**kwargs):
+            self.lab.generation += 1
+            return {"ok": False, "error": "old connection ended"}
+
+        self.lab.client = SimpleNamespace(observe_background=old_observation)
+        self.lab._refresh()
+        self.assertEqual(self.lab.observed["state"], {"turn": 1})
+        self.assertEqual(self.lab.status_name, "connected")
+        self.assertIsNone(self.lab.conn_error)
+
+    def test_background_socket_failure_stops_auto_without_replacing_model_phase(self):
+        self.lab.game = SimpleNamespace(connector="socket", config={"interval_ms": 1})
+        self.lab.client = SimpleNamespace(observe_background=Mock(side_effect=OSError("socket closed")))
+        self.lab.status_name = "connected"
+        self.lab.busy = self.lab.auto = True
+        self.lab._phase_locked("모델 판단")
+        self.lab._refresh()
+        self.assertEqual(self.lab.status_name, "error")
+        self.assertIn("socket closed", self.lab.conn_error)
+        self.assertFalse(self.lab.auto)
+        self.assertEqual(self.lab.phase["name"], "모델 판단")
+
     def test_a_dead_game_process_is_reported(self):
         self.connect()
         process = self.lab.client.client.process
@@ -128,7 +199,7 @@ class WebConsoleTest(unittest.TestCase):
                 self.lab.view_script(bad)
 
     def test_jev_needs_a_key(self):
-        self.connect("arena")
+        self.connect("party")
         with self.assertRaisesRegex(ValueError, "Jev API 키"):
             self.lab.run(provider="jev")
 

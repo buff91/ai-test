@@ -1,5 +1,6 @@
 {
   "connector": "socket",
+  "display": "headless",
   "launch": {
     "command": [
       "{python}",

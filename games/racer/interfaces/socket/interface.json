@@ -1,5 +1,6 @@
 {
   "connector": "socket",
+  "display": "headless",
   "launch": {
     "command": [
       "{python}",
@@ -10,7 +11,7 @@
     ],
     "socket_arg": "--socket"
   },
-  "interval_ms": 200,
+  "interval_ms": 300,
   "actions": {
     "accelerate": "accelerate",
     "brake": "brake",

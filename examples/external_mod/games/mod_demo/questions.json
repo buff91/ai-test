@@ -1,0 +1,11 @@
+{
+  "action": {
+    "type": "choice",
+    "instructions": "Choose one action to win the RPG battle and stay alive.",
+    "criteria": {
+      "attack": "Deal 10 damage to enemy 0, taking 6 damage if the enemy survives.",
+      "guard": "Reduce incoming damage to 1 this turn.",
+      "heal": "Restore 10 HP up to 30, then take 6 damage."
+    }
+  }
+}

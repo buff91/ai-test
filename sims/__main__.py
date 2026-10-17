@@ -1,8 +1,8 @@
 """Run a simulation game: serve it to play.py, write its cases.json, or play it by hand.
 
-  uv run python -m sims serve arena --socket /tmp/arena.sock     (play.py launches this itself)
-  uv run python -m sims cases arena --output games/arena/cases.json
-  uv run python -m sims play swarm --show-truth
+  uv run python -m sims serve party --socket /tmp/arena.sock     (play.py launches this itself)
+  uv run python -m sims cases party --output games/party/cases.json
+  uv run python -m sims play moba --show-truth
 """
 
 import argparse
@@ -16,7 +16,7 @@ from sims.base import truth
 
 
 def cmd_serve(args):
-    from game_ipc import GameServer
+    from gamelab.protocol import GameServer
     from sims.service import SimService
 
     server = GameServer(args.socket, SimService(SIMS[args.game], args.scenario))

@@ -1,0 +1,278 @@
+diff --git a/McpMod.MultiplayerState.cs b/McpMod.MultiplayerState.cs
+index cdbd318..acc91d5 100644
+--- a/McpMod.MultiplayerState.cs
++++ b/McpMod.MultiplayerState.cs
+@@ -193,12 +193,6 @@ public static partial class McpMod
+             }
+             else
+             {
+-                var merchUI = NMerchantRoom.Instance;
+-                if (merchUI?.Inventory != null && !merchUI.Inventory.IsOpen)
+-                {
+-                    merchUI.OpenInventory();
+-                }
+-
+                 result["state_type"] = "shop";
+                 result["shop"] = BuildShopState(merchantRoom, runState);
+             }
+@@ -367,10 +361,7 @@ public static partial class McpMod
+ 
+     private static Dictionary<string, object?> BuildMultiplayerTreasureState(TreasureRoom treasureRoom, RunState runState)
+     {
+-        // Auto-open chest same as singleplayer. BeginRelicPicking() runs during
+-        // TreasureRoom.Enter(), so relics are already generated. The chest click
+-        // just triggers the UI animation + gold via OneOffSynchronizer - same path
+-        // as a human click or the game's own AutoSlay handler.
++        // Shared treasure observation is read-only; opening requires user input.
+         var state = BuildTreasureState(treasureRoom, runState);
+ 
+         // Add per-player bid data
+diff --git a/McpMod.StateBuilder.cs b/McpMod.StateBuilder.cs
+index 76eee84..612249e 100644
+--- a/McpMod.StateBuilder.cs
++++ b/McpMod.StateBuilder.cs
+@@ -545,14 +545,6 @@ public static partial class McpMod
+             }
+             else
+             {
+-                // Auto-open the shopkeeper's inventory if not already open.
+-                // NMerchantRoom.Inventory (UI node) can be null before the scene is fully ready;
+-                // OpenInventory() itself accesses Inventory.IsOpen, so guard against null.
+-                var merchUI = NMerchantRoom.Instance;
+-                if (merchUI?.Inventory != null && !merchUI.Inventory.IsOpen)
+-                {
+-                    merchUI.OpenInventory();
+-                }
+                 result["state_type"] = "shop";
+                 result["shop"] = BuildShopState(merchantRoom, runState);
+             }
+@@ -1462,19 +1454,11 @@ public static partial class McpMod
+             return state;
+         }
+ 
+-        // Auto-open the inventory if the merchant button is still available
+-        if (fakeMerchantNode != null)
+-        {
+-            var inventoryUI = FindFirst<NMerchantInventory>(fakeMerchantNode);
+-            if (inventoryUI != null && !inventoryUI.IsOpen)
+-            {
+-                // ForceClick the merchant button to go through the proper signal chain
+-                // (disables proceed button, wires InventoryClosed callback, etc.)
+-                var merchantButton = fakeMerchantNode.MerchantButton;
+-                if (merchantButton != null && merchantButton.Visible && merchantButton.IsEnabled)
+-                    merchantButton.ForceClick();
+-            }
+-        }
++        // Observation does not click/open the merchant. A human may open it.
++        var inventoryUI = fakeMerchantNode == null ? null : FindFirst<NMerchantInventory>(fakeMerchantNode);
++        state["inventory_open"] = inventoryUI?.IsOpen ?? false;
++        state["can_open"] = fakeMerchantNode?.MerchantButton is { Visible: true, IsEnabled: true };
++        state["manual_open_required"] = state["can_open"] is true && state["inventory_open"] is false;
+ 
+         // Build shop inventory from the FakeMerchant model
+         var shopState = BuildFakeMerchantShopItems(fakeMerchant.Inventory);
+@@ -1563,6 +1547,11 @@ public static partial class McpMod
+     private static Dictionary<string, object?> BuildShopState(MerchantRoom merchantRoom, RunState runState)
+     {
+         var state = new Dictionary<string, object?>();
++        var inventoryUI = NMerchantRoom.Instance?.Inventory;
++        state["inventory_open"] = inventoryUI?.IsOpen ?? false;
++        state["can_open"] = inventoryUI != null && !inventoryUI.IsOpen;
++        state["manual_open_required"] = state["can_open"];
++
+ 
+         var inventory = merchantRoom.GetLocalInventory();
+         if (inventory == null)
+@@ -2299,12 +2288,13 @@ public static partial class McpMod
+             return state;
+         }
+ 
+-        // Auto-open chest if not yet opened
++        // GET is read-only: opening the chest grants gold and changes the run.
+         var chestButton = treasureUI.GetNodeOrNull<NClickableControl>("Chest");
+-        if (chestButton is { IsEnabled: true })
++        state["can_open"] = chestButton is { IsEnabled: true };
++        state["manual_open_required"] = state["can_open"];
++        if (state["can_open"] is true)
+         {
+-            chestButton.ForceClick();
+-            state["message"] = "Opening chest...";
++            state["message"] = "Open the chest in the game, then observe again.";
+             return state;
+         }
+ 
+diff --git a/McpMod.cs b/McpMod.cs
+index 3b5ed64..7a64fe5 100644
+--- a/McpMod.cs
++++ b/McpMod.cs
+@@ -3,6 +3,8 @@ using System.Collections.Concurrent;
+ using System.Collections.Generic;
+ using System.IO;
+ using System.Net;
++using System.Linq;
++using System.Security.Cryptography;
+ using System.Text;
+ using System.Text.Encodings.Web;
+ using System.Text.Json;
+@@ -127,7 +129,7 @@ public static partial class McpMod
+     private static void ProcessMainThreadQueue()
+     {
+         int processed = 0;
+-        while (_mainThreadQueue.TryDequeue(out var action) && processed < 10)
++        while (processed < 10 && _mainThreadQueue.TryDequeue(out var action))
+         {
+             try { action(); }
+             catch (Exception ex) { GD.PrintErr($"[STS2 MCP] Main thread action error: {ex}"); }
+@@ -193,7 +195,7 @@ public static partial class McpMod
+ 
+             if (path == "/")
+             {
+-                SendJson(response, new { message = $"Hello from STS2 MCP v{Version}", status = "ok" });
++                SendJson(response, new { message = $"Hello from STS2 MCP v{Version}", status = "ok", mod_version = Version, gamelab_patch = "ai-test-v1" });
+             }
+             else if (path == "/api/v1/singleplayer")
+             {
+@@ -382,13 +384,53 @@ public static partial class McpMod
+         }
+     }
+ 
++    private static Dictionary<string, object?> GameLabExpired() => new()
++    {
++        ["status"] = "error", ["expired"] = true,
++        ["error"] = "Action deadline expired; observe again. Do not retry automatically."
++    };
++
++    private static Dictionary<string, object?> BuildGameLabState()
++    {
++        var state = BuildGameState();
++        // Canonical JSON sorts object properties, preserves array order and excludes
++        // the revision itself. Repeated reads of an identical state have one token.
++        var element = JsonSerializer.SerializeToElement(state, _jsonOptions);
++        using var bytes = new MemoryStream();
++        using (var writer = new Utf8JsonWriter(bytes))
++            WriteCanonicalJson(writer, element);
++        state["gamelab_revision"] = Convert.ToHexString(SHA256.HashData(bytes.ToArray())).ToLowerInvariant();
++        return state;
++    }
++
++    private static void WriteCanonicalJson(Utf8JsonWriter writer, JsonElement element)
++    {
++        if (element.ValueKind == JsonValueKind.Object)
++        {
++            writer.WriteStartObject();
++            foreach (var property in element.EnumerateObject().OrderBy(p => p.Name, StringComparer.Ordinal))
++            {
++                writer.WritePropertyName(property.Name);
++                WriteCanonicalJson(writer, property.Value);
++            }
++            writer.WriteEndObject();
++        }
++        else if (element.ValueKind == JsonValueKind.Array)
++        {
++            writer.WriteStartArray();
++            foreach (var item in element.EnumerateArray()) WriteCanonicalJson(writer, item);
++            writer.WriteEndArray();
++        }
++        else element.WriteTo(writer);
++    }
++
+     private static void HandleGetState(HttpListenerRequest request, HttpListenerResponse response)
+     {
+         string format = request.QueryString["format"] ?? "json";
+ 
+         try
+         {
+-            var stateTask = RunOnMainThread(() => BuildGameState());
++            var stateTask = RunOnMainThread(() => BuildGameLabState());
+             var state = stateTask.GetAwaiter().GetResult();
+ 
+             if (format == "markdown")
+@@ -448,30 +490,75 @@ public static partial class McpMod
+             return;
+         }
+ 
++        if (actionElem.ValueKind != JsonValueKind.String)
++        {
++            SendError(response, 400, "action must be a string");
++            return;
++        }
+         string action = actionElem.GetString() ?? "";
+ 
+-        // Handle menu actions separately (no run required)
+-        if (action == "menu_select")
++        // Cap the queue lifetime even for legacy callers. A timed-out HTTP request
++        // must never leave a delayed action waiting to execute on a future frame.
++        long deadline = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 5000;
++        if (parsed.TryGetValue("deadline_unix_ms", out var deadlineElem))
+         {
+-            try
++            if (deadlineElem.ValueKind != JsonValueKind.Number || !deadlineElem.TryGetInt64(out long requestedDeadline))
+             {
+-                var option = parsed.TryGetValue("option", out var optElem) ? optElem.GetString() ?? "" : "";
+-                var seed = parsed.TryGetValue("seed", out var seedElem) ? seedElem.GetString() : null;
+-                var resultTask = RunOnMainThread(() => ExecuteMenuSelect(option, seed));
+-                var result = resultTask.GetAwaiter().GetResult();
+-                SendJson(response, result);
++                SendError(response, 400, "deadline_unix_ms must be an integer");
++                return;
+             }
+-            catch (Exception ex)
++            deadline = Math.Min(deadline, requestedDeadline);
++        }
++        if (deadline <= DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
++        {
++            SendJson(response, GameLabExpired());
++            return;
++        }
++        string? expectedRevision = null;
++        if (parsed.TryGetValue("expected_revision", out var revisionElem))
++        {
++            if (revisionElem.ValueKind != JsonValueKind.String || string.IsNullOrEmpty(revisionElem.GetString()))
+             {
+-                SendError(response, 500, $"Menu action failed: {ex.Message}");
++                SendError(response, 400, "expected_revision must be a non-empty string");
++                return;
+             }
+-            return;
++            expectedRevision = revisionElem.GetString();
+         }
+ 
+         try
+         {
+-            var resultTask = RunOnMainThread(() => ExecuteAction(action, parsed));
+-            var result = resultTask.GetAwaiter().GetResult();
++            var resultTask = RunOnMainThread(() =>
++            {
++                if (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() >= deadline)
++                    return GameLabExpired();
++                if (IsMultiplayerRun())
++                    return Error("Singleplayer actions are disabled during multiplayer runs.");
++
++                // Check the exact observed state and dispatch synchronously in ONE
++                // main-thread callback. Game action resolution may still be async.
++                if (expectedRevision != null)
++                {
++                    string currentRevision = (string)BuildGameLabState()["gamelab_revision"]!;
++                    if (!string.Equals(expectedRevision, currentRevision, StringComparison.Ordinal))
++                        return new Dictionary<string, object?>
++                        {
++                            ["status"] = "error", ["stale"] = true,
++                            ["error"] = "Observed state changed; observe again before choosing an action.",
++                            ["gamelab_revision"] = currentRevision
++                        };
++                }
++                if (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() >= deadline)
++                    return GameLabExpired();
++                if (action == "menu_select")
++                {
++                    var option = parsed.TryGetValue("option", out var optElem) ? optElem.GetString() ?? "" : "";
++                    var seed = parsed.TryGetValue("seed", out var seedElem) ? seedElem.GetString() : null;
++                    return ExecuteMenuSelect(option, seed);
++                }
++                return ExecuteAction(action, parsed);
++            });
++            int remainingMs = (int)Math.Max(0, deadline - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
++            var result = resultTask.Wait(remainingMs) ? resultTask.GetAwaiter().GetResult() : GameLabExpired();
+             SendJson(response, result);
+         }
+         catch (Exception ex)

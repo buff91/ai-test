@@ -58,7 +58,7 @@ class RacerSim(Sim):
                 % (self.turn, self.pos, LENGTH, LANES[self.lane], self.speed, MAX_SPEED, BOOST_SPEED, self.boost,
                    self.integrity, "; ".join(ahead) or "a clear track"))
 
-    def step(self, action):
+    def apply(self, action):
         if self.outcome != "playing":
             return ["게임이 끝났습니다."]
         if action not in self.ACTIONS:
@@ -74,6 +74,11 @@ class RacerSim(Sim):
         elif action == "boost" and self.boost > 0:
             self.boost -= 1
             self.speed = min(BOOST_SPEED, self.speed + 2)
+        return []
+
+    def world_step(self):
+        if self.outcome != "playing":
+            return []
         events = []
         crash = None
         for cell in range(self.pos + 1, self.pos + self.speed + 1):
@@ -98,6 +103,9 @@ class RacerSim(Sim):
         elif self.turn > 30:
             self.outcome = "draw"
         return events
+
+    def step(self, action):
+        return self.apply(action) + self.world_step()
 
     def legal(self):
         usable = {"accelerate": self.speed < MAX_SPEED, "brake": self.speed > 1, "steer_left": self.lane > 0,

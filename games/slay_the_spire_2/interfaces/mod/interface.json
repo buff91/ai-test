@@ -1,0 +1,270 @@
+{
+  "connector": "mod",
+  "display": "visible",
+  "continuous": false,
+  "endpoint": {
+    "host": "127.0.0.1",
+    "port": 8766
+  },
+  "manual": "Slay the Spire 2, 지원 모드, GameLab 브리지를 먼저 실행하세요. 설치·실행 절차는 docs/slay-the-spire-2.md를 확인하세요. 모델 제어 중에는 수동 입력을 중단하세요.",
+  "interval_ms": 700,
+  "max_age_ms": 120000,
+  "actions": {
+    "candidate_0": {
+      "command": "choose_candidate",
+      "slot": 0
+    },
+    "candidate_1": {
+      "command": "choose_candidate",
+      "slot": 1
+    },
+    "candidate_2": {
+      "command": "choose_candidate",
+      "slot": 2
+    },
+    "candidate_3": {
+      "command": "choose_candidate",
+      "slot": 3
+    },
+    "candidate_4": {
+      "command": "choose_candidate",
+      "slot": 4
+    },
+    "candidate_5": {
+      "command": "choose_candidate",
+      "slot": 5
+    },
+    "candidate_6": {
+      "command": "choose_candidate",
+      "slot": 6
+    },
+    "candidate_7": {
+      "command": "choose_candidate",
+      "slot": 7
+    },
+    "candidate_8": {
+      "command": "choose_candidate",
+      "slot": 8
+    },
+    "candidate_9": {
+      "command": "choose_candidate",
+      "slot": 9
+    },
+    "candidate_10": {
+      "command": "choose_candidate",
+      "slot": 10
+    },
+    "candidate_11": {
+      "command": "choose_candidate",
+      "slot": 11
+    },
+    "candidate_12": {
+      "command": "choose_candidate",
+      "slot": 12
+    },
+    "candidate_13": {
+      "command": "choose_candidate",
+      "slot": 13
+    },
+    "candidate_14": {
+      "command": "choose_candidate",
+      "slot": 14
+    },
+    "candidate_15": {
+      "command": "choose_candidate",
+      "slot": 15
+    },
+    "candidate_16": {
+      "command": "choose_candidate",
+      "slot": 16
+    },
+    "candidate_17": {
+      "command": "choose_candidate",
+      "slot": 17
+    },
+    "candidate_18": {
+      "command": "choose_candidate",
+      "slot": 18
+    },
+    "candidate_19": {
+      "command": "choose_candidate",
+      "slot": 19
+    },
+    "candidate_20": {
+      "command": "choose_candidate",
+      "slot": 20
+    },
+    "candidate_21": {
+      "command": "choose_candidate",
+      "slot": 21
+    },
+    "candidate_22": {
+      "command": "choose_candidate",
+      "slot": 22
+    },
+    "candidate_23": {
+      "command": "choose_candidate",
+      "slot": 23
+    },
+    "candidate_24": {
+      "command": "choose_candidate",
+      "slot": 24
+    },
+    "candidate_25": {
+      "command": "choose_candidate",
+      "slot": 25
+    },
+    "candidate_26": {
+      "command": "choose_candidate",
+      "slot": 26
+    },
+    "candidate_27": {
+      "command": "choose_candidate",
+      "slot": 27
+    },
+    "candidate_28": {
+      "command": "choose_candidate",
+      "slot": 28
+    },
+    "candidate_29": {
+      "command": "choose_candidate",
+      "slot": 29
+    },
+    "candidate_30": {
+      "command": "choose_candidate",
+      "slot": 30
+    },
+    "candidate_31": {
+      "command": "choose_candidate",
+      "slot": 31
+    },
+    "candidate_32": {
+      "command": "choose_candidate",
+      "slot": 32
+    },
+    "candidate_33": {
+      "command": "choose_candidate",
+      "slot": 33
+    },
+    "candidate_34": {
+      "command": "choose_candidate",
+      "slot": 34
+    },
+    "candidate_35": {
+      "command": "choose_candidate",
+      "slot": 35
+    },
+    "candidate_36": {
+      "command": "choose_candidate",
+      "slot": 36
+    },
+    "candidate_37": {
+      "command": "choose_candidate",
+      "slot": 37
+    },
+    "candidate_38": {
+      "command": "choose_candidate",
+      "slot": 38
+    },
+    "candidate_39": {
+      "command": "choose_candidate",
+      "slot": 39
+    },
+    "candidate_40": {
+      "command": "choose_candidate",
+      "slot": 40
+    },
+    "candidate_41": {
+      "command": "choose_candidate",
+      "slot": 41
+    },
+    "candidate_42": {
+      "command": "choose_candidate",
+      "slot": 42
+    },
+    "candidate_43": {
+      "command": "choose_candidate",
+      "slot": 43
+    },
+    "candidate_44": {
+      "command": "choose_candidate",
+      "slot": 44
+    },
+    "candidate_45": {
+      "command": "choose_candidate",
+      "slot": 45
+    },
+    "candidate_46": {
+      "command": "choose_candidate",
+      "slot": 46
+    },
+    "candidate_47": {
+      "command": "choose_candidate",
+      "slot": 47
+    },
+    "candidate_48": {
+      "command": "choose_candidate",
+      "slot": 48
+    },
+    "candidate_49": {
+      "command": "choose_candidate",
+      "slot": 49
+    },
+    "candidate_50": {
+      "command": "choose_candidate",
+      "slot": 50
+    },
+    "candidate_51": {
+      "command": "choose_candidate",
+      "slot": 51
+    },
+    "candidate_52": {
+      "command": "choose_candidate",
+      "slot": 52
+    },
+    "candidate_53": {
+      "command": "choose_candidate",
+      "slot": 53
+    },
+    "candidate_54": {
+      "command": "choose_candidate",
+      "slot": 54
+    },
+    "candidate_55": {
+      "command": "choose_candidate",
+      "slot": 55
+    },
+    "candidate_56": {
+      "command": "choose_candidate",
+      "slot": 56
+    },
+    "candidate_57": {
+      "command": "choose_candidate",
+      "slot": 57
+    },
+    "candidate_58": {
+      "command": "choose_candidate",
+      "slot": 58
+    },
+    "candidate_59": {
+      "command": "choose_candidate",
+      "slot": 59
+    },
+    "candidate_60": {
+      "command": "choose_candidate",
+      "slot": 60
+    },
+    "candidate_61": {
+      "command": "choose_candidate",
+      "slot": 61
+    },
+    "candidate_62": {
+      "command": "choose_candidate",
+      "slot": 62
+    },
+    "candidate_63": {
+      "command": "choose_candidate",
+      "slot": 63
+    }
+  }
+}

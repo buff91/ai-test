@@ -1,0 +1,14 @@
+{
+  "connector": "socket",
+  "display": "headless",
+  "socket": "/tmp/party.sock",
+  "interval_ms": 300,
+  "actions": {
+    "attack": "attack",
+    "aoe_skill": "aoe_skill",
+    "heal": "heal",
+    "guard": "guard",
+    "use_item": "use_item"
+  },
+  "manual": "python -m sims serve party --socket /tmp/party.sock 로 시뮬레이션을 실행한 뒤 연결하세요."
+}

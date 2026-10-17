@@ -1,0 +1,29 @@
+{
+  "action": {
+    "type": "choice",
+    "instructions": "Choose the best single hero input in this three-lane MOBA.",
+    "criteria": {
+      "advance": "Move one cell toward the enemy tower/core when supported by allied minions.",
+      "retreat": "Move one cell toward home to leave danger.",
+      "attack": "Clear one nearby enemy minion, or damage an exposed tower/core in range.",
+      "skill": "Clear three nearby minions or damage an exposed tower/core when cooldown is zero.",
+      "recall": "Return home and restore 30 HP.",
+      "lane_left": "Rotate one lane toward top to help a threatened lane or find a push.",
+      "lane_right": "Rotate one lane toward bot to help a threatened lane or find a push.",
+      "wait": "Hold position while minions advance or a cooldown expires."
+    }
+  },
+  "danger": {
+    "type": "score",
+    "instructions": "If the hero waits, how soon does the hero lose HP or lose the game?",
+    "criteria": [
+      "Safe for the next two beats.",
+      "Threatened on the second beat.",
+      "Critical on the next beat."
+    ]
+  },
+  "incoming_attack": {
+    "type": "noul",
+    "instructions": "Will waiting one beat cause the hero to lose HP or lose the game?"
+  }
+}

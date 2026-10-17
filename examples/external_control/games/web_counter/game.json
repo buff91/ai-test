@@ -1,0 +1,22 @@
+{
+  "name": "웹페이지 · 목표 숫자 맞추기",
+  "type": "turn.rpg",
+  "providers": {
+    "live": "laya-mlx",
+    "shadow": []
+  },
+  "version": "demo-v1",
+  "interface": "browser",
+  "versions": {
+    "demo-v1": {
+      "name": "브라우저 조작 예제 v1",
+      "description": "별도 Chromium 페이지의 숫자를 읽고 버튼을 눌러 목표를 맞춥니다.",
+      "interface": "browser",
+      "interfaces": {
+        "browser": {},
+        "headless": {},
+        "attach": {}
+      }
+    }
+  }
+}

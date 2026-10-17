@@ -1,0 +1,116 @@
+[
+  {
+    "id": "synthetic-combat-two-choices",
+    "note": "직접 작성한 합성 예시입니다. 실제 Slay the Spire 2 기록이나 공식 정답이 아니며 후보 선택 형식만 확인합니다.",
+    "state": {
+      "source": "synthetic example; not captured from the game",
+      "player": {
+        "hp": 20,
+        "max_hp": 60,
+        "block": 0,
+        "energy": 1,
+        "hand": [
+          {
+            "index": 0,
+            "name": "Example attack",
+            "cost": 1,
+            "description": "Deal 6 damage.",
+            "target_type": "AnyEnemy",
+            "can_play": true
+          }
+        ]
+      },
+      "candidates": [
+        {
+          "slot": 0,
+          "key": "candidate_0",
+          "label": "Play the example attack on Example enemy. Costs 1 energy; deals 6 damage.",
+          "action": {
+            "action": "play_card",
+            "card_index": 0,
+            "target": "EXAMPLE_ENEMY_0"
+          }
+        },
+        {
+          "slot": 1,
+          "key": "candidate_1",
+          "label": "End the player turn. The example enemy will act if it survives.",
+          "action": {
+            "action": "end_turn"
+          }
+        }
+      ],
+      "state_type": "monster",
+      "battle": {
+        "turn": "player",
+        "is_play_phase": true,
+        "enemies": [
+          {
+            "entity_id": "EXAMPLE_ENEMY_0",
+            "name": "Example enemy",
+            "hp": 5,
+            "block": 0,
+            "intents": [
+              "Attack for 8"
+            ]
+          }
+        ]
+      },
+      "screen": {},
+      "run": {},
+      "candidate_count": 2,
+      "outcome": "playing"
+    },
+    "truth": null
+  },
+  {
+    "id": "synthetic-screen-choice",
+    "note": "직접 작성한 합성 예시입니다. 임의의 선택 화면을 표현하며 실제 이벤트·보상·밸런스를 주장하지 않습니다.",
+    "state": {
+      "source": "synthetic example; not captured from the game",
+      "candidates": [
+        {
+          "slot": 0,
+          "key": "candidate_0",
+          "label": "Select the first available example option.",
+          "action": {
+            "action": "choose_event_option",
+            "index": 0
+          }
+        },
+        {
+          "slot": 1,
+          "key": "candidate_1",
+          "label": "Select the second available example option.",
+          "action": {
+            "action": "choose_event_option",
+            "index": 1
+          }
+        }
+      ],
+      "state_type": "event",
+      "player": {},
+      "battle": {},
+      "screen": {
+        "event_name": "Synthetic choice example",
+        "in_dialogue": false,
+        "options": [
+          {
+            "index": 0,
+            "name": "First example option",
+            "is_locked": false
+          },
+          {
+            "index": 1,
+            "name": "Second example option",
+            "is_locked": false
+          }
+        ]
+      },
+      "run": {},
+      "candidate_count": 2,
+      "outcome": "playing"
+    },
+    "truth": null
+  }
+]

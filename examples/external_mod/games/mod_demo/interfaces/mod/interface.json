@@ -1,0 +1,13 @@
+{
+  "connector": "mod",
+  "display": "headless",
+  "endpoint": {"host": "127.0.0.1", "port": 8765},
+  "manual": "별도 터미널에서 python -m examples.external_mod.demo를 먼저 실행하세요. 이 예제는 실제 Slay the Spire 모드가 아닙니다.",
+  "interval_ms": 700,
+  "max_age_ms": 5000,
+  "actions": {
+    "attack": {"command": "attack", "target": 0},
+    "guard": {"command": "guard"},
+    "heal": {"command": "heal"}
+  }
+}

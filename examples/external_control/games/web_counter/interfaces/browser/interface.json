@@ -1,0 +1,13 @@
+{
+  "connector": "socket",
+  "display": "visible",
+  "manual": "먼저 uv sync --group browser 및 uv run --group browser python -m playwright install chromium을 실행하세요. 연결하면 별도 Chromium에서 훈련 페이지를 엽니다.",
+  "launch": {
+    "command": ["{python}", "-m", "examples.external_control.browser_bridge"],
+    "ready_timeout": 30,
+    "build_hint": "browser 의존성과 Chromium 설치를 확인하세요.",
+    "sources": ["examples/external_control/browser_bridge.py", "examples/external_control/demo.html"]
+  },
+  "interval_ms": 500,
+  "actions": {"increase": "increase", "decrease": "decrease", "confirm": "confirm", "wait": "wait"}
+}

@@ -1,0 +1,6 @@
+{
+  "name": "외부 모드 브리지 예제 (실제 게임 모드 아님)",
+  "type": "turn.rpg",
+  "version": "demo-v1",
+  "versions": {"demo-v1": {"name": "Python 모드 브리지 예제", "interface": "mod", "interfaces": {"mod": {}}}}
+}

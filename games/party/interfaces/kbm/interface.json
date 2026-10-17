@@ -1,0 +1,48 @@
+{
+  "connector": "kbm",
+  "display": "visible",
+  "continuous": false,
+  "window": {
+    "owner": "python",
+    "title_contains": "Teaching Lab - Party RPG"
+  },
+  "interval_ms": 1000,
+  "max_age_ms": 2500,
+  "max_action_ms": 300,
+  "pause_key": null,
+  "reflex_hz": 0,
+  "decision_keys": [],
+  "actions": {
+    "attack": [
+      {
+        "tap": "1",
+        "ms": 30
+      }
+    ],
+    "aoe_skill": [
+      {
+        "tap": "2",
+        "ms": 30
+      }
+    ],
+    "heal": [
+      {
+        "tap": "3",
+        "ms": 30
+      }
+    ],
+    "guard": [
+      {
+        "tap": "4",
+        "ms": 30
+      }
+    ],
+    "use_item": [
+      {
+        "tap": "5",
+        "ms": 30
+      }
+    ]
+  },
+  "manual": "게임 창 준비를 누르거나 uv run python -m gamelab.desktop_game --game party --socket /tmp/teaching-party.sock 로 먼저 실행하세요. 키마는 화면의 숫자·색상 계기를 캡처해 읽고 실제 키를 보냅니다. KbmAgent의 화면 기록·손쉬운 사용 권한을 확인하고 입력 전 게임 창을 앞으로 가져오세요. 연결 해제 후에도 준비한 창은 유지됩니다."
+}

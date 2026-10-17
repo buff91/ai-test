@@ -5,12 +5,15 @@
 set -euo pipefail
 cd "${0:A:h}"
 export UV_CACHE_DIR="${PWD}/.uv-cache"
+export PYINSTALLER_CONFIG_DIR="${UV_CACHE_DIR}/pyinstaller"
 uv run --with pyinstaller python -m PyInstaller \
   --noconfirm --clean --windowed --onedir \
   --name KbmAgent \
   --osx-bundle-identifier local.jevlayalab.kbmagent \
+  --add-data config/game_types.json:config \
   --hidden-import PIL.Image \
-  --collect-submodules kbm --collect-submodules gamelab \
+  --hidden-import gamelab.screens \
+  --collect-submodules kbm \
   --exclude-module laya --exclude-module laya_mlx --exclude-module torch --exclude-module mlx \
   kbm_agent.py
 print "\nKbmAgent: ${PWD}/dist/KbmAgent.app"

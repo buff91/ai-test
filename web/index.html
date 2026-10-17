@@ -4,110 +4,171 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="session-token" content="__SESSION_TOKEN__">
-  <title>Decision Lab</title>
+  <title>Decision Lab · Laya와 Jev 판단 실습</title>
   <link rel="stylesheet" href="/app.css">
+  <script src="/learning.js" defer></script>
   <script src="/app.js" defer></script>
 </head>
 <body>
-  <div class="app-shell">
+  <div id="top" class="app-shell">
     <header class="masthead">
-      <div class="brand"><span class="brand-mark">◆</span><div><div class="eyebrow">LOCAL GAME TEST</div><h1>Decision Lab</h1></div></div>
+      <a class="brand" href="#top" aria-label="Decision Lab 처음으로"><span class="brand-mark" aria-hidden="true">↗</span><div><div class="eyebrow">JEV / LAYA / LAYA-MLX</div><h1>Decision Lab</h1></div></a>
+      <span class="header-note">게임 관찰 → 행동 선택 → 결과 확인</span>
       <div class="connection"><span class="pulse off"></span><span id="connection-text">연결 안 됨</span></div>
     </header>
-
-    <main>
-      <section>
-        <div class="section-heading"><div><span class="section-index">01 / GAME</span><h2>게임 연결</h2></div><span class="section-note">실행 방법은 games/&lt;게임&gt;/interfaces/&lt;이름&gt;/interface.json에서 옵니다</span></div>
-        <div class="control-panel">
-          <div class="settings-row first">
-            <label><span>게임</span><select id="game"></select></label>
-            <label><span>인터페이스</span><select id="interface"></select></label>
-            <span id="game-meta" class="meta"></span>
+    <div class="intro">
+      <div><span class="section-index">턴제 RPG · 레이싱 · MOBA</span><h2>원하는 방식으로 플레이하세요.</h2><p>직접 조작하거나, 두 가지 연결 방식 중 하나로 모델에게 맡기세요. 진행 순서 없이 선택할 수 있습니다.</p></div>
+      <a class="glossary-link" href="#glossary">용어 안내 ↓</a>
+    </div>
+    <div class="play-modes" role="group" aria-label="플레이 방식" aria-describedby="play-mode-note">
+      <button type="button" data-lesson="play" class="selected" aria-pressed="true"><div><b>직접 플레이</b><small>내가 게임 창에서 직접 조작</small></div><i aria-hidden="true">✓</i></button>
+      <button type="button" data-lesson="socket" aria-pressed="false"><div><b>모델 제어 · 게임 데이터</b><small>게임 내부 상태를 읽고 행동 명령 전송</small></div><i aria-hidden="true">✓</i></button>
+      <button type="button" data-lesson="kbm" aria-pressed="false"><div><b>모델 제어 · 화면 + 키마</b><small>화면을 관찰하고 키보드·마우스로 입력</small></div><i aria-hidden="true">✓</i></button>
+    </div>
+    <div class="mode-tools"><p id="play-mode-note" class="field-note" aria-live="polite">원하는 플레이 방식을 선택하세요.</p><button id="latency-tool" type="button" class="button-ghost">응답 시간 비교 · 설정 열기</button></div>
+    <div class="learning-map" aria-label="이 실습에서 살펴볼 모델 동작">
+      <div><span>01 · 입력</span><b>게임을 설명문으로 관찰</b><small>모델은 이 앱이 전달한 상태만 읽습니다.</small></div>
+      <div><span>02 · 질문</span><b>선택 · 점수 · 참일 확률</b><small>같은 상태에 세 유형의 질문을 보냅니다.</small></div>
+      <div><span>03 · 응답</span><b>확률과 구조화된 답</b><small>응답값은 정답 보장이 아닙니다.</small></div>
+      <div><span>04 · 반영</span><b>선택한 행동을 게임에 전달</b><small>보조 규칙·입력 취소는 앱이 처리합니다.</small></div>
+    </div>
+    <main class="workspace">
+      <aside class="setup-rail" aria-label="게임과 모델 설정">
+        <section class="setup-card">
+          <div class="panel-heading"><span class="section-index">01 · 연결 설정</span><h2>게임 연결</h2></div>
+          <div class="target-fields">
+            <label for="game">게임</label><select id="game"></select>
+            <div id="window-preparation" class="window-preparation" hidden>
+              <span class="field-label">게임 창</span>
+              <button id="prepare-window" type="button" class="button-secondary">게임 창 준비 ↗</button>
+              <p id="window-preparation-note" class="field-note" role="status"></p>
+            </div>
+            <div class="field-label route-label" id="control-route-label">모델이 게임을 제어하는 방법</div>
+            <div id="control-routes" class="control-routes" role="group" aria-labelledby="control-route-label">
+              <button type="button" data-route="internal" aria-pressed="false"><span class="route-icon" aria-hidden="true">↔</span><span><b>게임 인터페이스</b><small>내부 상태 → 모델 → 행동 명령</small></span><i aria-hidden="true">✓</i></button>
+              <button type="button" data-route="kbm" aria-pressed="false"><span class="route-icon" aria-hidden="true">⌨</span><span><b>화면 + 키보드·마우스</b><small>화면 캡처 → 모델 → 키·클릭 입력</small></span><i aria-hidden="true">✓</i></button>
+            </div>
+            <p id="control-route-note" class="field-note" aria-live="polite"></p>
+            <div id="route-flow" class="route-flow" aria-label="선택한 제어 경로"></div>
+            <div id="socket-field" hidden><label for="socket-path">실행 중인 게임의 소켓</label><input id="socket-path" type="text" spellcheck="false" placeholder="/tmp/game.sock"></div>
+            <p id="game-meta" class="meta"></p>
           </div>
-          <div class="run-box">
-            <div class="field-label">실행 방법</div>
-            <div id="run-how" class="run-how"></div>
-            <div id="run-manual" class="run-manual" hidden></div>
-          </div>
-          <div id="kbm-options" class="settings-row" hidden>
-            <label class="check"><input id="dry-run" type="checkbox" checked><span>DRY-RUN (입력을 보내지 않고 기록만)</span></label>
-            <label><span>KbmAgent</span><select id="agent"><option value="app">빌드한 KbmAgent.app</option><option value="dev">현재 Python (개발용)</option></select></label>
-          </div>
-          <div class="action-row">
-            <button id="connect" class="button-primary">연결</button>
-            <button id="disconnect" class="button-ghost">연결 끊기</button>
-            <span id="permissions" class="meta"></span>
-          </div>
-          <div class="health-grid">
-            <div class="health-card" id="card-process"><small>게임 프로세스</small><strong>—</strong><div class="health-detail"></div></div>
-            <div class="health-card" id="card-link"><small>응답</small><strong>—</strong><div class="health-detail"></div></div>
-            <div class="health-card wide" id="card-build"><small>실행 중인 빌드</small><strong>—</strong><div class="health-detail"></div></div>
-          </div>
-        </div>
-      </section>
-
-      <section>
-        <div class="section-heading"><div><span class="section-index">02 / MODEL CONTROL</span><h2>모델 실행</h2></div><span class="section-note">live 모델의 행동만 게임에 적용하고, shadow는 같은 장면을 판단해 기록만 합니다</span></div>
-        <div class="control-panel">
-          <div class="provider-row">
-            <div class="field-label">LIVE</div>
-            <div class="segmented" id="provider-buttons"></div>
-            <div class="field-label">SHADOW</div>
-            <div id="shadow-boxes" class="shadow-boxes"></div>
-            <label id="policy-field" class="check policy" hidden><input id="policy" type="checkbox"><span>policy 적용</span></label>
-          </div>
-          <div class="settings-row">
-            <label class="key-field"><span>Jev API 키</span><input id="api-key" type="password" autocomplete="off" placeholder="이 프로세스 메모리에만 보관"><small id="key-status">키가 설정되지 않았습니다</small></label>
-            <label id="scenario-field" class="scenario-field" hidden><span>시작 상황</span><select id="scenario"></select></label>
-          </div>
-          <div class="action-row">
-            <button id="run" class="button-primary">▶ &nbsp; 한 턴 실행</button>
-            <button id="auto" class="button-secondary">자동 플레이</button>
-            <button id="analyze" class="button-secondary">분석만 보기</button>
-            <button id="reset" class="button-ghost">↻ &nbsp; 새 판</button>
-            <a id="export" class="export-link" href="#">기록 내려받기 ↗</a>
-          </div>
-          <div class="status-row"><span class="status-light off"></span><span id="status-message">게임을 고르고 연결하세요.</span><span class="shortcut">ESC 자동 플레이 중지</span></div>
-          <div class="manual-bar"><span class="manual-label">직접 조작</span><div id="manual-actions" class="manual-actions"></div></div>
+          <details id="target-settings" class="connection-settings"><summary>버전 · 실행 방식 <small id="target-summary"></small></summary>
+            <label for="target">실행 대상 · 연결 방식</label><select id="target" aria-describedby="target-note"></select><p id="target-note" class="field-note"></p>
+          </details>
+          <details id="connection-settings" class="connection-settings"><summary>고급 연결 설정 · 관찰 주기와 행동 매핑</summary>
+            <p id="connection-settings-note" class="field-note">선택한 인터페이스에서 변경할 수 있는 설정을 표시합니다. 변경 후 연결하세요.</p>
+            <div id="timing-settings" class="timing-settings"></div>
+            <label id="mapping-label" for="connection-json">연결 주소 · 창 · 행동 매핑 (JSON)</label>
+            <textarea id="connection-json" rows="8" spellcheck="false" aria-describedby="mapping-help"></textarea>
+            <p id="mapping-help" class="field-note">소켓은 행동 명령, Mod는 플러그인의 명령, 키보드·마우스는 키와 클릭 목록을 연결합니다. 관찰 코드는 게임 인터페이스 폴더에 둡니다.</p>
+            <p id="connection-settings-error" class="field-note bad" role="alert"></p>
+          </details>
+          <details class="connection-guide"><summary>연결 방법과 실행 명령</summary><div id="run-how" class="run-how"></div><div id="run-manual" class="run-manual" hidden></div></details>
+          <div id="kbm-options" class="kbm-options" hidden><label class="check"><input id="dry-run" type="checkbox" checked><span>입력 미리보기 · 실제 입력 안 함</span></label><label for="agent">입력을 보낼 KbmAgent</label><select id="agent"><option value="app">KbmAgent.app</option><option value="dev">현재 Python (개발용)</option></select></div>
+          <div class="action-row connect-actions"><button id="connect" class="button-primary">게임 연결 ↗</button><button id="disconnect" class="button-ghost">연결 끊기</button></div>
+          <div id="permissions" class="meta" role="status"></div><div id="version-check" class="version-check">실행 대상을 선택하고 연결하세요.</div>
+        </section>
+        <section id="model-settings" class="setup-card model-settings">
+          <div class="panel-heading"><span class="section-index">모델 설정</span><h2>판단할 모델</h2></div>
+          <p class="model-intro">같은 상태와 질문을 로컬 Laya 또는 Jev API에 전달합니다.</p>
+          <div id="provider-explainer" class="provider-explainer"></div>
+          <details class="model-guide"><summary>세 질문은 어떻게 답하나요?</summary>
+            <dl><dt>행동 선택 · Choice</dt><dd>이름과 설명이 붙은 선택지들을 평가합니다. Laya는 가장 높은 확률의 선택지를 고릅니다.</dd><dt>점수 평가 · Score</dt><dd>설명된 각 단계의 확률로 가중평균을 계산합니다. 예: 0×10% + 1×20% + 2×70% = 1.6점.</dd><dt>확률 예측 · Noul</dt><dd>질문이 참일 확률을 0~1로 반환합니다.</dd></dl>
+            <p>세 질문은 같은 상태를 평가합니다. 위험도 응답이 자동으로 행동 선택에 들어가는 것은 아닙니다. 두 값을 연결하려면 보조 규칙이 필요합니다.</p>
+            <p>선택 확률, 응답의 확신도, 실제 기준 일치율을 구분해서 읽으세요. 확신도는 분포가 얼마나 한쪽에 모였는지를 나타내며 정답률이 아닙니다.</p>
+            <p class="learning-sources"><a href="https://docs.typesafe.ai/introduction" target="_blank" rel="noreferrer">Jev 공식 문서 ↗</a> · <a href="https://github.com/NandhaKishorM/laya" target="_blank" rel="noreferrer">Laya 소스 ↗</a></p>
+          </details>
+          <div class="field-label">제어 모델 · 게임에 행동 전달</div><div class="segmented" id="provider-buttons"></div>
+          <details id="advanced-settings" class="advanced-settings"><summary>비교·지연 설정 <small id="advanced-summary"></small></summary>
+            <div class="field-label">비교 모델 · 판단만 비교</div><div id="shadow-boxes" class="shadow-boxes"></div>
+            <label id="policy-field" class="check policy" hidden><input id="policy" type="checkbox"><span>게임의 보조 규칙 적용</span></label>
+            <div class="delay-settings"><label for="decision-delay">판단 후 추가 대기</label><select id="decision-delay"><option value="0">0 ms · 추가 대기 없음</option><option value="300">300 ms · 지연 추가</option><option value="1000">1,000 ms · 지연 추가</option></select><p class="field-note">실제 모델 응답 뒤에 추가하는 대기입니다. 모델의 측정값이 아닙니다. 같은 시작 상황에서 지연을 바꾸고 플레이를 비교하세요.</p></div>
+          </details>
+          <details class="key-settings"><summary>Jev API 키 <small id="key-status">설정 안 됨</small></summary><label class="key-field" for="api-key">API 키<input id="api-key" type="password" autocomplete="off" placeholder="이 프로세스 메모리에만 보관"></label></details>
+        </section>
+        <section id="comparison-settings" class="setup-card comparison-settings">
+          <div class="panel-heading"><span class="section-index">비교 실습</span><h2>같은 관찰로 비교</h2></div>
+          <p class="field-note">한 번 읽은 상태와 같은 질문을 두 모델에 보냅니다. 두 응답을 모두 기다리고 게임에는 입력하지 않습니다.</p>
+          <div class="compare-selects"><div><label for="compare-a">모델 A</label><select id="compare-a"><option value="laya">Laya · 로컬</option><option value="jev">Jev · API</option><option value="laya-mlx">Laya-MLX · 로컬</option></select></div><div><label for="compare-b">모델 B</label><select id="compare-b"><option value="jev">Jev · API</option><option value="laya">Laya · 로컬</option><option value="laya-mlx">Laya-MLX · 로컬</option></select></div></div>
+          <div class="action-row"><button id="compare" class="button-secondary">같은 관찰로 판단 비교</button></div>
+          <p id="compare-note" class="field-note" role="status">게임 연결 후 사용할 수 있습니다.</p>
+        </section>
+        <details class="setup-card diagnostics"><summary>연결 · 빌드 상세</summary><div class="health-grid"><div class="health-card" id="card-process"><small>게임 프로세스</small><strong>—</strong><div class="health-detail"></div></div><div class="health-card" id="card-link"><small>응답</small><strong>—</strong><div class="health-detail"></div></div><div class="health-card wide" id="card-build"><small>실행 중인 빌드</small><strong>—</strong><div class="health-detail"></div></div></div></details>
+        <details id="glossary" class="setup-card glossary">
+          <summary>용어 안내</summary>
+          <dl>
+            <dt>제어 모델 <small>Live</small></dt><dd>게임에 전달할 행동을 선택합니다. ‘판단만 보기’에서는 입력을 보내지 않습니다.</dd>
+            <dt>비교 모델 <small>Shadow</small></dt><dd>같은 관찰을 보고 판단을 기록합니다. 게임에 입력을 보내지 않습니다.</dd>
+            <dt>게임 인터페이스 <small>Socket / Mod</small></dt><dd>게임이 제공하는 내부 상태를 읽고 행동 명령을 전달합니다. 게임에 마련한 소켓 또는 플러그인 연결을 사용합니다.</dd>
+            <dt>게임 플러그인 연결 <small>Mod</small></dt><dd>게임에 설치한 모드가 상태를 읽어 보내고, 행동 명령을 게임 내부 기능으로 실행합니다. 각 게임에 맞는 모드 또는 브리지가 필요합니다.</dd>
+            <dt>화면·키보드·마우스 <small>KBM</small></dt><dd>화면을 관찰하고 키보드·마우스로 조작합니다. 입력 미리보기에서는 실제 입력을 보내지 않습니다.</dd>
+            <dt>질문 유형</dt><dd>행동 선택(Choice)은 선택지 고르기, 점수 평가(Score)는 점수 매기기, 확률 예측(Noul)은 0~1 확률 예측입니다.</dd>
+            <dt>기준 행동 일치율</dt><dd>제어 모델의 원래 선택이 게임에 정의된 기준과 일치한 비율입니다. 실습용 규칙과 비교하는 값이며, 일반적인 모델 성능을 뜻하지 않습니다.</dd>
+            <dt>모델 응답 / 전체 처리</dt><dd>모델 응답은 판단 요청에 걸린 시간입니다. 전체 처리는 관찰, 판단, 추가 대기, 입력 등의 시간을 포함합니다.</dd>
+            <dt>목표 응답 시간</dt><dd>게임별로 정한 시간 기준입니다. 응답 성공 여부와 목표 시간 충족 여부는 따로 확인합니다.</dd>
+            <dt>오래된 관찰로 취소</dt><dd>최근 판단 기록 중, 관찰 유효 시간이 지났거나 게임 상태가 바뀌어 적용하지 않은 판단 수입니다.</dd>
+            <dt>보조 규칙 <small>Policy</small></dt><dd>모델이 고른 행동을 게임별 규칙으로 보완합니다. 최종 행동은 모델의 원래 선택과 다를 수 있습니다.</dd>
+          </dl>
+        </details>
+        <p class="rail-note">실습 기록은 이 컴퓨터에 보관됩니다.</p>
+      </aside>
+      <section class="game-column" aria-label="게임과 실습">
+        <div class="game-heading"><div><span class="section-index">02 · 실행과 관찰</span><h2 id="workspace-title">게임 실습</h2><p id="game-run-context" class="field-note">게임과 실행 대상을 선택하세요.</p></div><span class="surface-badge" id="surface-badge">연결 전</span></div>
+        <div class="play-controls">
+          <div id="scenario-field" class="scenario-field" hidden><label for="scenario">시작 상황</label><select id="scenario"></select></div>
+          <div class="action-row primary-actions"><button id="run" class="button-primary">▶ 1회 실행</button><button id="auto" class="button-secondary">자동 플레이</button><button id="reset" class="button-ghost">↻ 새 판</button></div>
+          <div class="action-row secondary-actions"><button id="analyze" class="button-ghost">입력 없이 판단만 보기</button><span id="model-shortcut" class="shortcut"><kbd>Esc</kbd> 자동 플레이 중지</span></div>
+          <div class="action-row stop-row"><button id="stop" class="button-ghost" hidden>현재 실행 중지</button><span id="run-progress" class="field-note" role="status"></span></div>
+          <div class="status-row" role="status" aria-live="polite"><span class="status-light off"></span><span id="status-message">게임을 고르고 연결하세요.</span></div>
+          <details class="manual-control"><summary>콘솔에서 행동 하나 보내기</summary><div id="manual-actions" class="manual-actions"></div></details>
           <div id="kbm-warning" class="run-manual kbm-warning" hidden></div>
         </div>
+        <details class="lesson-guide"><summary>선택한 플레이 방식 안내</summary>
+        <div class="lesson-card" aria-live="polite"><div class="lesson-label" id="lesson-label">직접 플레이</div><h3 id="lesson-title">내가 직접 행동을 선택하고 조작합니다.</h3><p id="lesson-copy"></p><div id="lesson-task" class="lesson-task"></div></div>
+        </details>
+        <div class="game-stage">
+          <div class="foreground-note" id="foreground-note"><span class="window-icon" aria-hidden="true">↗</span><div><b id="foreground-title">별도 게임 창에서 플레이합니다.</b><p id="foreground-copy">화면 표시를 선택하고 게임을 연결하세요. 이 콘솔에는 관찰한 상태와 모델의 판단이 표시됩니다.</p></div></div>
+          <div class="column-title">관찰 데이터 요약 <span id="view-kind">연결 대기</span></div>
+          <div id="frame-box" class="frame-box" hidden><img id="frame" alt="KbmAgent가 마지막으로 캡처한 게임 화면"><small id="frame-note"></small></div>
+          <div id="game-view" class="game-view"><div class="empty"><span class="empty-symbol">↗</span>게임을 연결하고 실습을 시작하세요.<small>실제 플레이는 별도의 게임 창에서 진행됩니다.</small></div></div>
+          <details class="state-details"><summary>현재 관찰의 상태 설명 <span>관찰 → 질문 입력</span></summary><div id="state-text" class="state-box">—</div></details>
+          <details class="state-details"><summary>결과를 검증하는 기준 <span>채점 기준 · 모델에게 보내지 않음</span></summary><div id="truth" class="state-box">—</div></details>
+        </div>
+        <section class="input-inspector" aria-label="실제 게임 입력 확인">
+          <div class="panel-heading"><span class="section-index">선택 → 명령 → 게임 응답</span><h2>게임에 전달한 입력</h2><p id="input-trace-note" class="field-note">판단 또는 직접 조작을 실행하면 기록이 표시됩니다.</p></div>
+          <div id="input-trace" class="input-trace"><div class="empty">아직 전송 기록이 없습니다.</div></div>
+        </section>
+        <div class="latency-section"><div class="measure-heading"><span class="section-index">실제로 측정한 시간</span><span id="measure-provider">아직 실행하지 않음</span></div>
+          <div class="latency-strip">
+            <div><small>모델 응답</small><strong id="measure-model">—</strong></div>
+            <div><small>전체 처리 시간</small><strong id="measure-loop">—</strong></div>
+            <div><small>목표 응답 시간</small><strong id="measure-budget">—</strong></div>
+            <div><small title="최근 판단 기록 중, 관찰 유효 시간이 지났거나 게임 상태가 바뀌어 적용하지 않은 판단 수">오래된 관찰로 취소</small><strong id="measure-stale">0 <em>회</em></strong></div>
+          </div><p id="measure-note" class="field-note">모델을 실행하면 모델 응답 시간과 전체 처리 시간을 표시합니다.</p>
+        </div>
+        <details class="flow-details" open><summary>처리 단계와 현재 진행 상황</summary><div id="pipeline" class="pipeline"></div><div class="concept-flow"><div><b>상태</b><small>게임 데이터 또는 화면</small></div><i>→</i><div><b>행동 선택</b><small>선택지 중 다음 행동</small></div><i>→</i><div><b>입력</b><small>소켓 또는 키보드·마우스</small></div><i>→</i><div><b>검증</b><small>다음 상태와 기록 확인</small></div></div></details>
       </section>
-
-      <section>
-        <div class="section-heading"><div><span class="section-index">03 / LIVE</span><h2>게임과 모델</h2></div><span class="section-note">지금 게임 상태와, 모델에 무엇을 보내고 무엇을 받았는지</span></div>
-        <div class="live-grid">
-          <div class="live-game">
-            <div class="column-title">GAME VIEW <span id="view-kind"></span></div>
-            <div id="frame-box" class="frame-box" hidden><img id="frame" alt="캡처한 게임 화면"><small id="frame-note"></small></div>
-            <div id="game-view" class="game-view"><div class="empty">연결하면 게임 상태가 표시됩니다.</div></div>
-            <details class="state-details"><summary>모델에게 보내는 설명문</summary><div id="state-text" class="state-box">—</div></details>
-            <div class="column-title event-title">TRUTH <span>게임이 계산한 정답 · 모델에게 보내지 않음</span></div><div id="truth" class="state-box">—</div>
-          </div>
-          <div class="live-model">
-            <div class="column-title">PIPELINE</div>
-            <div id="pipeline" class="pipeline"></div>
-            <div class="column-title event-title">MODEL CALLS <span>최근 호출이 위에 · 펼치면 요청과 응답</span></div>
-            <div id="calls" class="calls"><div class="empty">모델을 실행하면 호출이 이곳에 표시됩니다.</div></div>
-          </div>
-        </div>
-      </section>
-
-      <section>
-        <div class="section-heading"><div><span class="section-index">04 / DECISION TRACE</span><h2>판단 기록</h2></div><span id="session-note" class="section-note">최근 판단이 위에 표시됩니다</span></div>
-        <div class="stats-grid">
-          <div class="stat"><small>STEPS</small><strong id="stat-steps">0</strong></div>
-          <div class="stat"><small>LAST ACTION</small><strong id="stat-action">—</strong></div>
-          <div class="stat"><small id="stat-latency-label">LAST LATENCY</small><strong id="stat-latency">—</strong></div>
-          <div class="stat"><small>LIVE ACTION ACCURACY</small><strong id="stat-accuracy">—</strong></div>
-        </div>
-        <div id="summary" class="summary" hidden></div>
-        <div class="analysis-grid">
-          <div class="decision-column"><div class="column-title">DECISIONS <span id="decision-count">0</span></div><div id="decisions" class="decision-list"><div class="empty">모델을 실행하면 질문별 판단과 정답이 이곳에 쌓입니다.</div></div></div>
-          <aside class="side-column"><div class="column-title">EVENTS</div><div id="events" class="events"></div></aside>
-        </div>
+      <section class="trace-column" aria-label="모델 입력과 판단 결과">
+        <section id="learning-inspector" class="learning-inspector" aria-label="한 번의 판단 해부">
+          <div class="panel-heading"><span class="section-index">03 · 동작 원리 확인</span><h2>한 번의 판단 해부</h2><p class="field-note">실제로 보낸 입력과 반환된 값을 따라갑니다.</p></div>
+          <label for="learning-record">살펴볼 판단</label><select id="learning-record"><option value="latest">최신 관찰 · 아직 실행 전</option></select>
+          <p id="learning-status" class="field-note" role="status">게임을 연결하면 입력 미리보기를 볼 수 있습니다.</p>
+          <details class="learning-step" open><summary><span>01</span> 모델에 보낸 상태</summary><div id="learning-input"></div></details>
+          <details id="learning-question-step" class="learning-step"><summary><span>02</span> 실제 질문과 선택지</summary><div id="learning-questions"></div></details>
+          <details class="learning-step" open><summary><span>03</span> 반환된 답과 확률</summary><div id="learning-output"></div></details>
+          <details class="learning-step"><summary><span>04</span> 게임에 반영된 결과</summary><div id="learning-effect"></div></details>
+          <details class="learning-step" open><summary><span>시간</span> 준비 · 응답 · 전체 처리</summary><div id="learning-timing"></div></details>
+        </section>
+        <details class="trace-disclosure"><summary class="trace-overview"><div><span class="section-index">전체 실행 이력</span><h2>호출·판단 기록</h2><p>선택한 행동과 모델 응답을 확인합니다.</p></div><span class="trace-open-label" aria-hidden="true"></span></summary><div class="trace-content">
+        <div class="trace-heading"><span class="field-note">같은 상태를 보고 선택한 행동을 비교합니다.</span><a id="export" class="export-link" href="#">기록 저장 (JSON) ↗</a></div>
+        <div class="stats-grid"><div class="stat"><small>판단 횟수</small><strong id="stat-steps">0</strong></div><div class="stat"><small>최근 선택 행동</small><strong id="stat-action">—</strong></div><div class="stat"><small id="stat-latency-label">모델 응답</small><strong id="stat-latency">—</strong></div><div class="stat"><small title="제어 모델의 원래 선택이 게임에 정의된 기준 행동과 일치한 비율">기준 행동 일치율</small><strong id="stat-accuracy">—</strong></div></div>
+        <div class="trace-tabs" role="tablist" aria-label="기록 종류"><button id="tab-calls" data-tab="calls" class="selected" role="tab" aria-selected="true" aria-controls="panel-calls">모델 호출 <span id="call-count">0</span></button><button id="tab-decisions" data-tab="decisions" role="tab" aria-selected="false" aria-controls="panel-decisions" tabindex="-1">판단 기록 <span id="decision-count">0</span></button><button id="tab-events" data-tab="events" role="tab" aria-selected="false" aria-controls="panel-events" tabindex="-1">실행 로그</button></div>
+        <div class="trace-panels"><div id="panel-calls" role="tabpanel" aria-labelledby="tab-calls"><p class="trace-hint">최근 요청이 위에 표시됩니다. 항목을 펼치면 요청과 응답 원문을 확인할 수 있습니다.</p><div id="calls" class="calls"><div class="empty">모델을 실행하면 요청·응답·호출 시간이 여기에 쌓입니다.</div></div></div><div id="panel-decisions" role="tabpanel" aria-labelledby="tab-decisions" hidden><p id="session-note" class="trace-hint">최근 판단이 위에 표시됩니다.</p><div id="summary" class="summary" hidden></div><div id="decisions" class="decision-list"><div class="empty">모델을 실행하면 질문별 판단과 정답이 여기에 쌓입니다.</div></div></div><div id="panel-events" role="tabpanel" aria-labelledby="tab-events" hidden><p class="trace-hint">연결, 직접 조작, 모델 실행 중 발생한 일을 시간순으로 확인합니다.</p><div id="events" class="events"></div></div></div>
+        </div></details>
       </section>
     </main>
-    <footer>Decision Lab <span>·</span> 실습·교육용 프로젝트 <span>·</span> 게임은 독립 프로세스로 실행됩니다. API 키는 저장하지 않고, 화면에도 표시하지 않습니다.</footer>
+    <footer><span>DECISION LAB</span> 게임을 관찰하고, 다음 행동을 선택하고, 결과로 확인합니다.</footer>
   </div>
 </body>
 </html>

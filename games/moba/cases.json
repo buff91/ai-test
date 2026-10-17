@@ -1,0 +1,282 @@
+[
+  {
+    "id": "wave_clear-00",
+    "state": "Three-lane MOBA beat 1. Hero HP 100/100, lane mid, position 3 (home=0, enemy core=6), skill cooldown 0, gold 0. Allied/enemy core HP 100/100. top: front 3, allied/enemy minions 2/2, allied/enemy tower HP 60/60; mid: front 3, allied/enemy minions 2/4, allied/enemy tower HP 60/60; bot: front 3, allied/enemy minions 2/2, allied/enemy tower HP 60/60. advance/retreat move one cell; lane_left/right rotate one lane. attack at the minion front clears one enemy minion; skill clears three if ready, then cools for three beats. At position 5+ and with no enemy minions, attack/skill deal 14/24 to the lane tower; at position 6 after that tower falls they hit the enemy core. An enemy tower hits for 18 when you enter position 5+ without allied minions. Enemy minions within one cell hit for 3 each. Minions clash, survivors push their lane and damage towers/cores; two new minions per side spawn every four beats. recall moves home and heals 30. Destroy the enemy core; hero death or allied core destruction loses. Choose one action.",
+    "truth": {
+      "action": [
+        "skill"
+      ],
+      "danger": 2,
+      "incoming_attack": true
+    }
+  },
+  {
+    "id": "wave_clear-01",
+    "state": "Three-lane MOBA beat 2. Hero HP 97/100, lane mid, position 3 (home=0, enemy core=6), skill cooldown 2, gold 30. Allied/enemy core HP 100/100. top: front 3, allied/enemy minions 1/1, allied/enemy tower HP 60/60; mid: front 3, allied/enemy minions 1/0, allied/enemy tower HP 60/60; bot: front 3, allied/enemy minions 1/1, allied/enemy tower HP 60/60. advance/retreat move one cell; lane_left/right rotate one lane. attack at the minion front clears one enemy minion; skill clears three if ready, then cools for three beats. At position 5+ and with no enemy minions, attack/skill deal 14/24 to the lane tower; at position 6 after that tower falls they hit the enemy core. An enemy tower hits for 18 when you enter position 5+ without allied minions. Enemy minions within one cell hit for 3 each. Minions clash, survivors push their lane and damage towers/cores; two new minions per side spawn every four beats. recall moves home and heals 30. Destroy the enemy core; hero death or allied core destruction loses. Choose one action.",
+    "truth": {
+      "action": [
+        "advance"
+      ],
+      "danger": 0,
+      "incoming_attack": false
+    }
+  },
+  {
+    "id": "wave_clear-02",
+    "state": "Three-lane MOBA beat 3. Hero HP 97/100, lane mid, position 4 (home=0, enemy core=6), skill cooldown 1, gold 30. Allied/enemy core HP 100/100. top: front 3, allied/enemy minions 0/0, allied/enemy tower HP 60/60; mid: front 4, allied/enemy minions 1/0, allied/enemy tower HP 60/60; bot: front 3, allied/enemy minions 0/0, allied/enemy tower HP 60/60. advance/retreat move one cell; lane_left/right rotate one lane. attack at the minion front clears one enemy minion; skill clears three if ready, then cools for three beats. At position 5+ and with no enemy minions, attack/skill deal 14/24 to the lane tower; at position 6 after that tower falls they hit the enemy core. An enemy tower hits for 18 when you enter position 5+ without allied minions. Enemy minions within one cell hit for 3 each. Minions clash, survivors push their lane and damage towers/cores; two new minions per side spawn every four beats. recall moves home and heals 30. Destroy the enemy core; hero death or allied core destruction loses. Choose one action.",
+    "truth": {
+      "action": [
+        "advance"
+      ],
+      "danger": 1,
+      "incoming_attack": false
+    }
+  },
+  {
+    "id": "wave_clear-03",
+    "state": "Three-lane MOBA beat 4. Hero HP 97/100, lane mid, position 5 (home=0, enemy core=6), skill cooldown 0, gold 30. Allied/enemy core HP 100/100. top: front 3, allied/enemy minions 2/2, allied/enemy tower HP 60/60; mid: front 5, allied/enemy minions 3/2, allied/enemy tower HP 60/57; bot: front 3, allied/enemy minions 2/2, allied/enemy tower HP 60/60. advance/retreat move one cell; lane_left/right rotate one lane. attack at the minion front clears one enemy minion; skill clears three if ready, then cools for three beats. At position 5+ and with no enemy minions, attack/skill deal 14/24 to the lane tower; at position 6 after that tower falls they hit the enemy core. An enemy tower hits for 18 when you enter position 5+ without allied minions. Enemy minions within one cell hit for 3 each. Minions clash, survivors push their lane and damage towers/cores; two new minions per side spawn every four beats. recall moves home and heals 30. Destroy the enemy core; hero death or allied core destruction loses. Choose one action.",
+    "truth": {
+      "action": [
+        "skill"
+      ],
+      "danger": 2,
+      "incoming_attack": true
+    }
+  },
+  {
+    "id": "wave_clear-04",
+    "state": "Three-lane MOBA beat 5. Hero HP 91/100, lane mid, position 5 (home=0, enemy core=6), skill cooldown 0, gold 30. Allied/enemy core HP 100/100. top: front 3, allied/enemy minions 1/1, allied/enemy tower HP 60/60; mid: front 5, allied/enemy minions 2/1, allied/enemy tower HP 60/57; bot: front 3, allied/enemy minions 1/1, allied/enemy tower HP 60/60. advance/retreat move one cell; lane_left/right rotate one lane. attack at the minion front clears one enemy minion; skill clears three if ready, then cools for three beats. At position 5+ and with no enemy minions, attack/skill deal 14/24 to the lane tower; at position 6 after that tower falls they hit the enemy core. An enemy tower hits for 18 when you enter position 5+ without allied minions. Enemy minions within one cell hit for 3 each. Minions clash, survivors push their lane and damage towers/cores; two new minions per side spawn every four beats. recall moves home and heals 30. Destroy the enemy core; hero death or allied core destruction loses. Choose one action.",
+    "truth": {
+      "action": [
+        "attack",
+        "skill"
+      ],
+      "danger": 2,
+      "incoming_attack": true
+    }
+  },
+  {
+    "id": "wave_clear-05",
+    "state": "Three-lane MOBA beat 6. Hero HP 91/100, lane mid, position 5 (home=0, enemy core=6), skill cooldown 0, gold 40. Allied/enemy core HP 100/100. top: front 3, allied/enemy minions 0/0, allied/enemy tower HP 60/60; mid: front 6, allied/enemy minions 2/0, allied/enemy tower HP 60/51; bot: front 3, allied/enemy minions 0/0, allied/enemy tower HP 60/60. advance/retreat move one cell; lane_left/right rotate one lane. attack at the minion front clears one enemy minion; skill clears three if ready, then cools for three beats. At position 5+ and with no enemy minions, attack/skill deal 14/24 to the lane tower; at position 6 after that tower falls they hit the enemy core. An enemy tower hits for 18 when you enter position 5+ without allied minions. Enemy minions within one cell hit for 3 each. Minions clash, survivors push their lane and damage towers/cores; two new minions per side spawn every four beats. recall moves home and heals 30. Destroy the enemy core; hero death or allied core destruction loses. Choose one action.",
+    "truth": {
+      "action": [
+        "advance",
+        "attack"
+      ],
+      "danger": 0,
+      "incoming_attack": false
+    }
+  },
+  {
+    "id": "tower_push-00",
+    "state": "Three-lane MOBA beat 1. Hero HP 100/100, lane mid, position 5 (home=0, enemy core=6), skill cooldown 0, gold 0. Allied/enemy core HP 100/100. top: front 3, allied/enemy minions 2/2, allied/enemy tower HP 60/60; mid: front 3, allied/enemy minions 4/0, allied/enemy tower HP 60/28; bot: front 3, allied/enemy minions 2/2, allied/enemy tower HP 60/60. advance/retreat move one cell; lane_left/right rotate one lane. attack at the minion front clears one enemy minion; skill clears three if ready, then cools for three beats. At position 5+ and with no enemy minions, attack/skill deal 14/24 to the lane tower; at position 6 after that tower falls they hit the enemy core. An enemy tower hits for 18 when you enter position 5+ without allied minions. Enemy minions within one cell hit for 3 each. Minions clash, survivors push their lane and damage towers/cores; two new minions per side spawn every four beats. recall moves home and heals 30. Destroy the enemy core; hero death or allied core destruction loses. Choose one action.",
+    "truth": {
+      "action": [
+        "skill"
+      ],
+      "danger": 0,
+      "incoming_attack": false
+    }
+  },
+  {
+    "id": "tower_push-01",
+    "state": "Three-lane MOBA beat 2. Hero HP 100/100, lane mid, position 5 (home=0, enemy core=6), skill cooldown 2, gold 0. Allied/enemy core HP 100/100. top: front 3, allied/enemy minions 1/1, allied/enemy tower HP 60/60; mid: front 4, allied/enemy minions 4/0, allied/enemy tower HP 60/4; bot: front 3, allied/enemy minions 1/1, allied/enemy tower HP 60/60. advance/retreat move one cell; lane_left/right rotate one lane. attack at the minion front clears one enemy minion; skill clears three if ready, then cools for three beats. At position 5+ and with no enemy minions, attack/skill deal 14/24 to the lane tower; at position 6 after that tower falls they hit the enemy core. An enemy tower hits for 18 when you enter position 5+ without allied minions. Enemy minions within one cell hit for 3 each. Minions clash, survivors push their lane and damage towers/cores; two new minions per side spawn every four beats. recall moves home and heals 30. Destroy the enemy core; hero death or allied core destruction loses. Choose one action.",
+    "truth": {
+      "action": [
+        "advance"
+      ],
+      "danger": 0,
+      "incoming_attack": false
+    }
+  },
+  {
+    "id": "tower_push-02",
+    "state": "Three-lane MOBA beat 3. Hero HP 100/100, lane mid, position 6 (home=0, enemy core=6), skill cooldown 1, gold 0. Allied/enemy core HP 100/100. top: front 3, allied/enemy minions 0/0, allied/enemy tower HP 60/60; mid: front 5, allied/enemy minions 4/0, allied/enemy tower HP 60/0; bot: front 3, allied/enemy minions 0/0, allied/enemy tower HP 60/60. advance/retreat move one cell; lane_left/right rotate one lane. attack at the minion front clears one enemy minion; skill clears three if ready, then cools for three beats. At position 5+ and with no enemy minions, attack/skill deal 14/24 to the lane tower; at position 6 after that tower falls they hit the enemy core. An enemy tower hits for 18 when you enter position 5+ without allied minions. Enemy minions within one cell hit for 3 each. Minions clash, survivors push their lane and damage towers/cores; two new minions per side spawn every four beats. recall moves home and heals 30. Destroy the enemy core; hero death or allied core destruction loses. Choose one action.",
+    "truth": {
+      "action": [
+        "attack"
+      ],
+      "danger": 1,
+      "incoming_attack": false
+    }
+  },
+  {
+    "id": "tower_push-03",
+    "state": "Three-lane MOBA beat 4. Hero HP 100/100, lane mid, position 6 (home=0, enemy core=6), skill cooldown 0, gold 0. Allied/enemy core HP 100/78. top: front 3, allied/enemy minions 2/2, allied/enemy tower HP 60/60; mid: front 6, allied/enemy minions 6/2, allied/enemy tower HP 60/0; bot: front 3, allied/enemy minions 2/2, allied/enemy tower HP 60/60. advance/retreat move one cell; lane_left/right rotate one lane. attack at the minion front clears one enemy minion; skill clears three if ready, then cools for three beats. At position 5+ and with no enemy minions, attack/skill deal 14/24 to the lane tower; at position 6 after that tower falls they hit the enemy core. An enemy tower hits for 18 when you enter position 5+ without allied minions. Enemy minions within one cell hit for 3 each. Minions clash, survivors push their lane and damage towers/cores; two new minions per side spawn every four beats. recall moves home and heals 30. Destroy the enemy core; hero death or allied core destruction loses. Choose one action.",
+    "truth": {
+      "action": [
+        "skill"
+      ],
+      "danger": 2,
+      "incoming_attack": true
+    }
+  },
+  {
+    "id": "tower_push-04",
+    "state": "Three-lane MOBA beat 5. Hero HP 100/100, lane mid, position 6 (home=0, enemy core=6), skill cooldown 2, gold 20. Allied/enemy core HP 100/66. top: front 3, allied/enemy minions 1/1, allied/enemy tower HP 60/60; mid: front 6, allied/enemy minions 6/0, allied/enemy tower HP 60/0; bot: front 3, allied/enemy minions 1/1, allied/enemy tower HP 60/60. advance/retreat move one cell; lane_left/right rotate one lane. attack at the minion front clears one enemy minion; skill clears three if ready, then cools for three beats. At position 5+ and with no enemy minions, attack/skill deal 14/24 to the lane tower; at position 6 after that tower falls they hit the enemy core. An enemy tower hits for 18 when you enter position 5+ without allied minions. Enemy minions within one cell hit for 3 each. Minions clash, survivors push their lane and damage towers/cores; two new minions per side spawn every four beats. recall moves home and heals 30. Destroy the enemy core; hero death or allied core destruction loses. Choose one action.",
+    "truth": {
+      "action": [
+        "attack",
+        "wait"
+      ],
+      "danger": 0,
+      "incoming_attack": false
+    }
+  },
+  {
+    "id": "tower_push-05",
+    "state": "Three-lane MOBA beat 6. Hero HP 100/100, lane mid, position 6 (home=0, enemy core=6), skill cooldown 1, gold 20. Allied/enemy core HP 100/40. top: front 3, allied/enemy minions 0/0, allied/enemy tower HP 60/60; mid: front 6, allied/enemy minions 6/0, allied/enemy tower HP 60/0; bot: front 3, allied/enemy minions 0/0, allied/enemy tower HP 60/60. advance/retreat move one cell; lane_left/right rotate one lane. attack at the minion front clears one enemy minion; skill clears three if ready, then cools for three beats. At position 5+ and with no enemy minions, attack/skill deal 14/24 to the lane tower; at position 6 after that tower falls they hit the enemy core. An enemy tower hits for 18 when you enter position 5+ without allied minions. Enemy minions within one cell hit for 3 each. Minions clash, survivors push their lane and damage towers/cores; two new minions per side spawn every four beats. recall moves home and heals 30. Destroy the enemy core; hero death or allied core destruction loses. Choose one action.",
+    "truth": {
+      "action": [
+        "attack",
+        "wait"
+      ],
+      "danger": 0,
+      "incoming_attack": false
+    }
+  },
+  {
+    "id": "unsafe_dive-00",
+    "state": "Three-lane MOBA beat 1. Hero HP 24/100, lane mid, position 5 (home=0, enemy core=6), skill cooldown 0, gold 0. Allied/enemy core HP 100/100. top: front 3, allied/enemy minions 2/2, allied/enemy tower HP 60/60; mid: front 3, allied/enemy minions 0/0, allied/enemy tower HP 60/60; bot: front 3, allied/enemy minions 2/2, allied/enemy tower HP 60/60. advance/retreat move one cell; lane_left/right rotate one lane. attack at the minion front clears one enemy minion; skill clears three if ready, then cools for three beats. At position 5+ and with no enemy minions, attack/skill deal 14/24 to the lane tower; at position 6 after that tower falls they hit the enemy core. An enemy tower hits for 18 when you enter position 5+ without allied minions. Enemy minions within one cell hit for 3 each. Minions clash, survivors push their lane and damage towers/cores; two new minions per side spawn every four beats. recall moves home and heals 30. Destroy the enemy core; hero death or allied core destruction loses. Choose one action.",
+    "truth": {
+      "action": [
+        "skill"
+      ],
+      "danger": 2,
+      "incoming_attack": true
+    }
+  },
+  {
+    "id": "unsafe_dive-01",
+    "state": "Three-lane MOBA beat 2. Hero HP 6/100, lane mid, position 5 (home=0, enemy core=6), skill cooldown 2, gold 0. Allied/enemy core HP 100/100. top: front 3, allied/enemy minions 1/1, allied/enemy tower HP 60/60; mid: front 3, allied/enemy minions 0/0, allied/enemy tower HP 60/36; bot: front 3, allied/enemy minions 1/1, allied/enemy tower HP 60/60. advance/retreat move one cell; lane_left/right rotate one lane. attack at the minion front clears one enemy minion; skill clears three if ready, then cools for three beats. At position 5+ and with no enemy minions, attack/skill deal 14/24 to the lane tower; at position 6 after that tower falls they hit the enemy core. An enemy tower hits for 18 when you enter position 5+ without allied minions. Enemy minions within one cell hit for 3 each. Minions clash, survivors push their lane and damage towers/cores; two new minions per side spawn every four beats. recall moves home and heals 30. Destroy the enemy core; hero death or allied core destruction loses. Choose one action.",
+    "truth": {
+      "action": [
+        "recall"
+      ],
+      "danger": 2,
+      "incoming_attack": true
+    }
+  },
+  {
+    "id": "unsafe_dive-02",
+    "state": "Three-lane MOBA beat 3. Hero HP 6/100, lane top, position 5 (home=0, enemy core=6), skill cooldown 1, gold 0. Allied/enemy core HP 100/100. top: front 3, allied/enemy minions 0/0, allied/enemy tower HP 60/60; mid: front 3, allied/enemy minions 0/0, allied/enemy tower HP 60/36; bot: front 3, allied/enemy minions 0/0, allied/enemy tower HP 60/60. advance/retreat move one cell; lane_left/right rotate one lane. attack at the minion front clears one enemy minion; skill clears three if ready, then cools for three beats. At position 5+ and with no enemy minions, attack/skill deal 14/24 to the lane tower; at position 6 after that tower falls they hit the enemy core. An enemy tower hits for 18 when you enter position 5+ without allied minions. Enemy minions within one cell hit for 3 each. Minions clash, survivors push their lane and damage towers/cores; two new minions per side spawn every four beats. recall moves home and heals 30. Destroy the enemy core; hero death or allied core destruction loses. Choose one action.",
+    "truth": {
+      "action": [
+        "recall"
+      ],
+      "danger": 2,
+      "incoming_attack": true
+    }
+  },
+  {
+    "id": "unsafe_dive-03",
+    "state": "Three-lane MOBA beat 4. Hero HP 36/100, lane top, position 0 (home=0, enemy core=6), skill cooldown 0, gold 0. Allied/enemy core HP 100/100. top: front 3, allied/enemy minions 2/2, allied/enemy tower HP 60/60; mid: front 3, allied/enemy minions 2/2, allied/enemy tower HP 60/36; bot: front 3, allied/enemy minions 2/2, allied/enemy tower HP 60/60. advance/retreat move one cell; lane_left/right rotate one lane. attack at the minion front clears one enemy minion; skill clears three if ready, then cools for three beats. At position 5+ and with no enemy minions, attack/skill deal 14/24 to the lane tower; at position 6 after that tower falls they hit the enemy core. An enemy tower hits for 18 when you enter position 5+ without allied minions. Enemy minions within one cell hit for 3 each. Minions clash, survivors push their lane and damage towers/cores; two new minions per side spawn every four beats. recall moves home and heals 30. Destroy the enemy core; hero death or allied core destruction loses. Choose one action.",
+    "truth": {
+      "action": [
+        "recall"
+      ],
+      "danger": 0,
+      "incoming_attack": false
+    }
+  },
+  {
+    "id": "unsafe_dive-04",
+    "state": "Three-lane MOBA beat 5. Hero HP 66/100, lane top, position 0 (home=0, enemy core=6), skill cooldown 0, gold 0. Allied/enemy core HP 100/100. top: front 3, allied/enemy minions 1/1, allied/enemy tower HP 60/60; mid: front 3, allied/enemy minions 1/1, allied/enemy tower HP 60/36; bot: front 3, allied/enemy minions 1/1, allied/enemy tower HP 60/60. advance/retreat move one cell; lane_left/right rotate one lane. attack at the minion front clears one enemy minion; skill clears three if ready, then cools for three beats. At position 5+ and with no enemy minions, attack/skill deal 14/24 to the lane tower; at position 6 after that tower falls they hit the enemy core. An enemy tower hits for 18 when you enter position 5+ without allied minions. Enemy minions within one cell hit for 3 each. Minions clash, survivors push their lane and damage towers/cores; two new minions per side spawn every four beats. recall moves home and heals 30. Destroy the enemy core; hero death or allied core destruction loses. Choose one action.",
+    "truth": {
+      "action": [
+        "recall"
+      ],
+      "danger": 0,
+      "incoming_attack": false
+    }
+  },
+  {
+    "id": "unsafe_dive-05",
+    "state": "Three-lane MOBA beat 6. Hero HP 96/100, lane top, position 0 (home=0, enemy core=6), skill cooldown 0, gold 0. Allied/enemy core HP 100/100. top: front 3, allied/enemy minions 0/0, allied/enemy tower HP 60/60; mid: front 3, allied/enemy minions 0/0, allied/enemy tower HP 60/36; bot: front 3, allied/enemy minions 0/0, allied/enemy tower HP 60/60. advance/retreat move one cell; lane_left/right rotate one lane. attack at the minion front clears one enemy minion; skill clears three if ready, then cools for three beats. At position 5+ and with no enemy minions, attack/skill deal 14/24 to the lane tower; at position 6 after that tower falls they hit the enemy core. An enemy tower hits for 18 when you enter position 5+ without allied minions. Enemy minions within one cell hit for 3 each. Minions clash, survivors push their lane and damage towers/cores; two new minions per side spawn every four beats. recall moves home and heals 30. Destroy the enemy core; hero death or allied core destruction loses. Choose one action.",
+    "truth": {
+      "action": [
+        "advance"
+      ],
+      "danger": 0,
+      "incoming_attack": false
+    }
+  },
+  {
+    "id": "defend_bot-00",
+    "state": "Three-lane MOBA beat 1. Hero HP 100/100, lane mid, position 2 (home=0, enemy core=6), skill cooldown 0, gold 0. Allied/enemy core HP 100/100. top: front 3, allied/enemy minions 2/2, allied/enemy tower HP 60/60; mid: front 3, allied/enemy minions 2/2, allied/enemy tower HP 60/60; bot: front 1, allied/enemy minions 0/4, allied/enemy tower HP 14/60. advance/retreat move one cell; lane_left/right rotate one lane. attack at the minion front clears one enemy minion; skill clears three if ready, then cools for three beats. At position 5+ and with no enemy minions, attack/skill deal 14/24 to the lane tower; at position 6 after that tower falls they hit the enemy core. An enemy tower hits for 18 when you enter position 5+ without allied minions. Enemy minions within one cell hit for 3 each. Minions clash, survivors push their lane and damage towers/cores; two new minions per side spawn every four beats. recall moves home and heals 30. Destroy the enemy core; hero death or allied core destruction loses. Choose one action.",
+    "truth": {
+      "action": [
+        "skill"
+      ],
+      "danger": 2,
+      "incoming_attack": true
+    }
+  },
+  {
+    "id": "defend_bot-01",
+    "state": "Three-lane MOBA beat 2. Hero HP 100/100, lane mid, position 2 (home=0, enemy core=6), skill cooldown 2, gold 20. Allied/enemy core HP 100/100. top: front 3, allied/enemy minions 1/1, allied/enemy tower HP 60/60; mid: front 4, allied/enemy minions 2/0, allied/enemy tower HP 60/60; bot: front 0, allied/enemy minions 0/4, allied/enemy tower HP 2/60. advance/retreat move one cell; lane_left/right rotate one lane. attack at the minion front clears one enemy minion; skill clears three if ready, then cools for three beats. At position 5+ and with no enemy minions, attack/skill deal 14/24 to the lane tower; at position 6 after that tower falls they hit the enemy core. An enemy tower hits for 18 when you enter position 5+ without allied minions. Enemy minions within one cell hit for 3 each. Minions clash, survivors push their lane and damage towers/cores; two new minions per side spawn every four beats. recall moves home and heals 30. Destroy the enemy core; hero death or allied core destruction loses. Choose one action.",
+    "truth": {
+      "action": [
+        "advance"
+      ],
+      "danger": 0,
+      "incoming_attack": false
+    }
+  },
+  {
+    "id": "defend_bot-02",
+    "state": "Three-lane MOBA beat 3. Hero HP 100/100, lane mid, position 3 (home=0, enemy core=6), skill cooldown 1, gold 20. Allied/enemy core HP 100/100. top: front 3, allied/enemy minions 0/0, allied/enemy tower HP 60/60; mid: front 5, allied/enemy minions 2/0, allied/enemy tower HP 60/54; bot: front 0, allied/enemy minions 0/4, allied/enemy tower HP 0/60. advance/retreat move one cell; lane_left/right rotate one lane. attack at the minion front clears one enemy minion; skill clears three if ready, then cools for three beats. At position 5+ and with no enemy minions, attack/skill deal 14/24 to the lane tower; at position 6 after that tower falls they hit the enemy core. An enemy tower hits for 18 when you enter position 5+ without allied minions. Enemy minions within one cell hit for 3 each. Minions clash, survivors push their lane and damage towers/cores; two new minions per side spawn every four beats. recall moves home and heals 30. Destroy the enemy core; hero death or allied core destruction loses. Choose one action.",
+    "truth": {
+      "action": [
+        "advance"
+      ],
+      "danger": 0,
+      "incoming_attack": false
+    }
+  },
+  {
+    "id": "defend_bot-03",
+    "state": "Three-lane MOBA beat 4. Hero HP 100/100, lane mid, position 4 (home=0, enemy core=6), skill cooldown 0, gold 20. Allied/enemy core HP 92/100. top: front 3, allied/enemy minions 2/2, allied/enemy tower HP 60/60; mid: front 6, allied/enemy minions 4/2, allied/enemy tower HP 60/48; bot: front 0, allied/enemy minions 2/6, allied/enemy tower HP 0/60. advance/retreat move one cell; lane_left/right rotate one lane. attack at the minion front clears one enemy minion; skill clears three if ready, then cools for three beats. At position 5+ and with no enemy minions, attack/skill deal 14/24 to the lane tower; at position 6 after that tower falls they hit the enemy core. An enemy tower hits for 18 when you enter position 5+ without allied minions. Enemy minions within one cell hit for 3 each. Minions clash, survivors push their lane and damage towers/cores; two new minions per side spawn every four beats. recall moves home and heals 30. Destroy the enemy core; hero death or allied core destruction loses. Choose one action.",
+    "truth": {
+      "action": [
+        "advance"
+      ],
+      "danger": 0,
+      "incoming_attack": false
+    }
+  },
+  {
+    "id": "defend_bot-04",
+    "state": "Three-lane MOBA beat 5. Hero HP 94/100, lane mid, position 5 (home=0, enemy core=6), skill cooldown 0, gold 20. Allied/enemy core HP 92/100. top: front 3, allied/enemy minions 1/1, allied/enemy tower HP 60/60; mid: front 6, allied/enemy minions 3/1, allied/enemy tower HP 60/48; bot: front 0, allied/enemy minions 1/5, allied/enemy tower HP 0/60. advance/retreat move one cell; lane_left/right rotate one lane. attack at the minion front clears one enemy minion; skill clears three if ready, then cools for three beats. At position 5+ and with no enemy minions, attack/skill deal 14/24 to the lane tower; at position 6 after that tower falls they hit the enemy core. An enemy tower hits for 18 when you enter position 5+ without allied minions. Enemy minions within one cell hit for 3 each. Minions clash, survivors push their lane and damage towers/cores; two new minions per side spawn every four beats. recall moves home and heals 30. Destroy the enemy core; hero death or allied core destruction loses. Choose one action.",
+    "truth": {
+      "action": [
+        "attack",
+        "skill"
+      ],
+      "danger": 2,
+      "incoming_attack": true
+    }
+  },
+  {
+    "id": "defend_bot-05",
+    "state": "Three-lane MOBA beat 6. Hero HP 94/100, lane bot, position 5 (home=0, enemy core=6), skill cooldown 0, gold 20. Allied/enemy core HP 92/100. top: front 3, allied/enemy minions 0/0, allied/enemy tower HP 60/60; mid: front 6, allied/enemy minions 2/0, allied/enemy tower HP 60/48; bot: front 0, allied/enemy minions 0/4, allied/enemy tower HP 0/60. advance/retreat move one cell; lane_left/right rotate one lane. attack at the minion front clears one enemy minion; skill clears three if ready, then cools for three beats. At position 5+ and with no enemy minions, attack/skill deal 14/24 to the lane tower; at position 6 after that tower falls they hit the enemy core. An enemy tower hits for 18 when you enter position 5+ without allied minions. Enemy minions within one cell hit for 3 each. Minions clash, survivors push their lane and damage towers/cores; two new minions per side spawn every four beats. recall moves home and heals 30. Destroy the enemy core; hero death or allied core destruction loses. Choose one action.",
+    "truth": {
+      "action": [
+        "lane_left"
+      ],
+      "danger": 2,
+      "incoming_attack": true
+    }
+  },
+  {
+    "id": "core_finish-00",
+    "state": "Three-lane MOBA beat 1. Hero HP 100/100, lane mid, position 6 (home=0, enemy core=6), skill cooldown 0, gold 0. Allied/enemy core HP 100/20. top: front 3, allied/enemy minions 2/2, allied/enemy tower HP 60/60; mid: front 3, allied/enemy minions 3/0, allied/enemy tower HP 60/0; bot: front 3, allied/enemy minions 2/2, allied/enemy tower HP 60/60. advance/retreat move one cell; lane_left/right rotate one lane. attack at the minion front clears one enemy minion; skill clears three if ready, then cools for three beats. At position 5+ and with no enemy minions, attack/skill deal 14/24 to the lane tower; at position 6 after that tower falls they hit the enemy core. An enemy tower hits for 18 when you enter position 5+ without allied minions. Enemy minions within one cell hit for 3 each. Minions clash, survivors push their lane and damage towers/cores; two new minions per side spawn every four beats. recall moves home and heals 30. Destroy the enemy core; hero death or allied core destruction loses. Choose one action.",
+    "truth": {
+      "action": [
+        "skill"
+      ],
+      "danger": 0,
+      "incoming_attack": false
+    }
+  }
+]

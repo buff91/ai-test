@@ -1,4 +1,4 @@
-"""Serve one Sim over the game_ipc JSON-line socket, with the truth beside every state.
+"""Serve one Sim over the gamelab.protocol JSON-line socket, with the truth beside every state.
 
   {"op": "state"}                               -> {"ok", "snapshot", "description", "revision", "done", "truth"}
   {"op": "step", "action", "expected_revision"} -> the same, plus "before"
@@ -33,7 +33,8 @@ class SimService:
             if op == "state":
                 return {"ok": True, **self._state()}
             if op == "info":
-                return {"ok": True, "actions": list(self.sim_cls.ACTIONS), "scenarios": list(self.sim_cls.SCENARIOS)}
+                return {"ok": True, "actions": list(self.sim_cls.ACTIONS), "scenarios": list(self.sim_cls.SCENARIOS),
+                        "build": {"game": self.sim_cls.__module__.rsplit(".", 1)[-1], "version": "sim-v1"}}
             if op == "reset":
                 names = list(self.sim_cls.SCENARIOS)
                 scenario = request.get("scenario") or names[(names.index(self.sim.scenario) + 1) % len(names)]

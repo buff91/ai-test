@@ -8,6 +8,8 @@ dependencies = ["laya>=0.4,<0.5", "laya-mlx>=0.4,<0.5"]
 [dependency-groups]
 # Screen capture and keyboard/mouse input for games/ cases (kbm_agent.py).
 kbm = ["pillow>=10", "pyobjc-framework-Quartz>=10"]
+# Optional browser control examples (separate Chromium, DOM observation and input).
+browser = ["playwright>=1.49,<2"]
 
 [tool.uv]
 package = false

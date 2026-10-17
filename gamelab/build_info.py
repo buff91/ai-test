@@ -5,7 +5,7 @@
   source   "{python} -m <package>": the git commit and whether those sources have uncommitted edits
 
 interface.json "launch.sources" lists the files a build is made from, e.g.
-["game.py", "game_core.py", "game_ipc.py"]; for "-m <package>" it defaults to the package folder.
+["gamelab/desktop_game.py", "sims", "gamelab/protocol.py"]; for "-m <package>" it defaults to the package folder.
 """
 
 import hashlib

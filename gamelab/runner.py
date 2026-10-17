@@ -5,6 +5,7 @@ spot (gamelab/grade.py), and the session ends with a summary per model and quest
 """
 
 import json
+from copy import deepcopy
 import time
 from concurrent.futures import ThreadPoolExecutor, wait
 from datetime import datetime
@@ -26,7 +27,8 @@ def play(client, decider, config, steps=0, pause=False, record=True, save_frames
     """
     policy = policy or Policy(None, questions or {})
     pool = ThreadPoolExecutor(max_workers=2 * (1 + len(shadows)))
-    session = new_session(client.request("info")["game"]) if record else None
+    info = client.request("info") if record else {}
+    session = new_session(info["game"], {key: info.get(key) for key in ("target", "runtime", "game_build", "version_check")}) if record else None
     interval = config["interval_ms"] / 1000
     count, episode, rows, outcomes = 0, 0, [], []
     try:
@@ -75,13 +77,13 @@ def play(client, decider, config, steps=0, pause=False, record=True, save_frames
 
 
 def tick(client, decider, config, pause=False, shadows=(), shadow_wait_ms=None, questions=None, policy=None,
-         pool=None, frame_path=None, step=0, episode=0, apply=True):
+         pool=None, frame_path=None, step=0, episode=0, apply=True, decision_delay_ms=0, cancel_event=None):
     """One observe -> decide -> (policy) -> act. A late answer is dropped instead of acting on an old screen.
 
     Shadow deciders judge the same observation in parallel and are only recorded.
     They never delay the action; with shadow_wait_ms set (real-time games) a shadow
     that is still thinking when the tick ends is recorded as a timeout.
-    apply=False only asks the models and leaves the game as it is.
+    apply=False only asks the models, waits for every answer, and sends no game input.
 
     Returns {"kind": "error", "error"}, {"kind": "done", "outcome", "observed"} when the
     episode already ended, or {"kind": "step", "row", "halted"}.
@@ -96,45 +98,84 @@ def tick(client, decider, config, pause=False, shadows=(), shadow_wait_ms=None, 
     own_pool = pool is None and shadows
     pool = ThreadPoolExecutor(max_workers=len(shadows)) if own_pool else pool
     warnings = []
+    paused_for_decision = False
+    resume_pending = False
+    observation_to_input_ms = None
     try:
-        if pause:
-            warnings += _error(client.request("pause"))
+        if apply and pause and not (observed.get("state") or {}).get("paused"):
+            paused = client.request("pause")
+            warnings += _error(paused)
+            paused_for_decision = resume_pending = bool(paused.get("ok"))
         state = observed["description"] or observed["state"]
         truth = observed.get("truth")
-        pending = {d.provider: pool.submit(d.decide, state) for d in shadows}
-        decision = decider.decide(state)
+        pending = {d.provider: pool.submit(_decide, d, state, step, episode) for d in shadows}
+        decision = _decide(decider, state, step, episode)
         final, fired = policy.apply(decision, state)
-        if pause:
+        # Teaching control: deliberately defer input, without counting it as model latency.
+        added_delay = decision_delay_ms if apply and final["status"] == "ok" else 0
+        if added_delay:
+            if cancel_event is not None:
+                cancel_event.wait(added_delay / 1000)
+            else:
+                time.sleep(added_delay / 1000)
+        if resume_pending:
+            resume_pending = False
             warnings += _error(client.request("resume"))
-        if final["status"] != "ok":
+        cancelled = cancel_event is not None and cancel_event.is_set()
+        if cancelled:
+            result = {"ok": True, "applied": False, "cancelled": True}
+        elif final["status"] != "ok":
             result = {"ok": False, "applied": False, "error": final["error"]}
         elif not apply:
             result = {"ok": True, "applied": False}
-        elif pause:
-            result = client.request("act", action=final["action"])
         else:
-            result = client.request("act", action=final["action"], signature=observed["signature"],
-                                    observed_at=observed["observed_at"], max_age_ms=config["max_age_ms"])
-        budget = None if shadow_wait_ms is None else max(0, shadow_wait_ms / 1000 - (time.time() - tick_started))
+            # This ends at the input attempt, before waiting for any shadow model.
+            observation_to_input_ms = round((time.time() - observed.get("observed_at", tick_started)) * 1000, 1)
+            freshness = {} if paused_for_decision else {
+                "signature": observed["signature"], "observed_at": observed["observed_at"],
+                "max_age_ms": config["max_age_ms"]}
+            result = client.request("act", action=final["action"], **freshness)
+        budget = None if not apply or shadow_wait_ms is None else max(0, shadow_wait_ms / 1000 - (time.time() - tick_started))
         wait(pending.values(), timeout=budget)
         shadow = [{**future.result(), "agrees": future.result().get("action") == final.get("action")}
                   if future.done() else {"provider": name, "status": "timeout"}
                   for name, future in pending.items()]
+        if not apply:
+            cancelled = cancel_event is not None and cancel_event.is_set()
     finally:
+        if resume_pending:
+            # Restore only a pause introduced by this tick, including on inference failure.
+            try:
+                warnings += _error(client.request("resume"))
+            except Exception as exc:
+                warnings.append("게임 재개 실패: %s" % exc)
         if own_pool:
             pool.shutdown(wait=False, cancel_futures=True)
     graded = _grade(decision, truth, questions)
     for row in shadow:
         row["grade"] = _grade(row, truth, questions)
-    row = {"step": step, "episode": episode, "frame": frame_path if observed.get("frame_saved") else None,
+    row = {"step": step, "episode": episode, "target": config.get("_target"), "frame": frame_path if observed.get("frame_saved") else None,
            "state": observed["state"], "description": observed["description"], "truth": truth,
+           "request": {"state": state, "questions": questions or {}},
+           "reference_kind": observed.get("reference_kind"),
            "decision": decision, "action": final.get("action"), "policy": fired, "grade": graded,
            "final_correct": _action_correct(final.get("action"), truth, questions),
            "shadow": shadow, "applied": bool(result.get("applied")), "stale": bool(result.get("stale")),
            "analysis_only": not apply, "error": None if result.get("ok") else result.get("error"),
+           "decision_delay_ms": added_delay, "cancelled": cancelled,
+           "input_trace": {"connector": config.get("connector"), "action": final.get("action"),
+                           "command": deepcopy(result.get("command")),
+                           "mapped_command": deepcopy((config.get("actions") or {}).get(final.get("action"))),
+                           "attempted": observation_to_input_ms is not None, "result": deepcopy(result)},
+           "observation_to_input_ms": observation_to_input_ms,
            "after_state": result.get("state"), "done": bool(result.get("done")),
            "warnings": warnings, "loop_ms": round((time.time() - tick_started) * 1000, 1)}
     return {"kind": "step", "row": row, "halted": bool(result.get("halted"))}
+
+
+def _decide(decider, state, step, episode):
+    contextual = getattr(decider, "decide_with_context", None)
+    return contextual(state, step=step, episode=episode) if contextual else decider.decide(state)
 
 
 def format_row(row):
@@ -150,9 +191,11 @@ def format_row(row):
         "".join("  | %s=%s" % (r["provider"], r.get("action") or r.get("status")) for r in row["shadow"]))
 
 
-def new_session(game_id):
-    session = RESULTS / game_id / datetime.now().strftime("%Y%m%d-%H%M%S")
+def new_session(game_id, metadata=None):
+    session = RESULTS / game_id / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     session.mkdir(parents=True, exist_ok=True)
+    if metadata is not None:
+        (session / "session.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return session
 
 
@@ -180,15 +223,17 @@ def _action_correct(action, truth, questions):
 
 
 def summarize_rows(rows, questions=None, outcomes=()):
-    """Per-model grade summaries and policy effect for one session's rows."""
-    live = [r for r in rows if r.get("grade")]
+    """Keep input-free comparisons separate from the ordinary control-loop summary."""
+    regular = [r for r in rows if not r.get("comparison")]
+    comparison_rows = [r for r in rows if r.get("comparison")]
+    live = [r for r in regular if r.get("grade")]
     shadows = {}
-    for row in rows:
+    for row in regular:
         for s in row.get("shadow") or []:
             if s.get("grade"):
                 shadows.setdefault(s["provider"], []).append(s["grade"])
     fired, overrides = {}, []
-    for row in rows:
+    for row in regular:
         policy = row.get("policy") or {}
         for name in policy.get("fired", []):
             fired[name] = fired.get(name, 0) + 1
@@ -196,17 +241,32 @@ def summarize_rows(rows, questions=None, outcomes=()):
             before = (row.get("grade") or {}).get("action", {}).get("correct")
             overrides.append({"step": row["step"], **policy["override"], "was_correct": before,
                               "now_correct": row.get("final_correct")})
+    comparisons = {}
+    for row in comparison_rows:
+        for decision in [{**row["decision"], "grade": row.get("grade")}, *(row.get("shadow") or [])]:
+            provider = decision.get("provider")
+            if provider is None:
+                continue
+            result = comparisons.setdefault(provider, {"count": 0, "statuses": {}, "grades": []})
+            result["count"] += 1
+            status = decision.get("status") or "unknown"
+            result["statuses"][status] = result["statuses"].get(status, 0) + 1
+            if decision.get("grade"):
+                result["grades"].append(decision["grade"])
+    for result in comparisons.values():
+        result["grades"] = grade.summarize(result["grades"])
     return {
         "steps": len(rows),
         "outcomes": list(outcomes),
-        "live": {"provider": rows[0]["decision"].get("provider") if rows else None,
+        "live": {"provider": regular[0]["decision"].get("provider") if regular else None,
                  "grades": grade.summarize(r["grade"] for r in live)},
         "shadows": {p: grade.summarize(g) for p, g in shadows.items()},
         "policy": {"fired": fired, "overrides": len(overrides),
                    "helped": sum(1 for o in overrides if o["now_correct"] and o["was_correct"] is False),
                    "hurt": sum(1 for o in overrides if o["was_correct"] and o["now_correct"] is False),
                    "detail": overrides},
-        "final_action_accuracy": grade._mean(r["final_correct"] for r in rows if r.get("final_correct") is not None),
+        "final_action_accuracy": grade._mean(r["final_correct"] for r in regular if r.get("final_correct") is not None),
+        "comparisons": {"steps": len(comparison_rows), "providers": comparisons},
     }
 
 
@@ -219,6 +279,10 @@ def format_session(summary):
     for provider, grades in summary["shadows"].items():
         lines.append("[shadow %s]" % provider)
         lines.append(grade.format_summary(grades))
+    for provider, result in (summary.get("comparisons") or {}).get("providers", {}).items():
+        lines.append("[입력 없는 비교 %s · %d회]" % (provider, result["count"]))
+        if result["grades"]:
+            lines.append(grade.format_summary(result["grades"]))
     policy = summary["policy"]
     if policy["fired"]:
         lines.append("[policy] 발동 %s · 행동 교체 %d회 (정답으로 바뀜 %d, 오답으로 바뀜 %d)" % (

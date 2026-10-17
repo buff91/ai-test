@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>외부 웹페이지 제어 · 목표 카운터</title>
+  <style>
+    :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Noto Sans KR", sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #eef2f7; color: #172b46; min-height: 100vh; padding: 48px 20px; display: grid; place-items: center; }
+    main { width: min(640px, 100%); padding: 36px; border: 1px solid #d9e1eb; background: white; border-radius: 20px; box-shadow: 0 16px 48px #172b4610; }
+    .eyebrow { color: #3d66b6; font-size: 13px; font-weight: 750; letter-spacing: .05em; }
+    h1 { margin: 10px 0 12px; font-size: 30px; letter-spacing: -.04em; }
+    .intro { color: #52657d; line-height: 1.7; margin: 0 0 26px; }
+    #state { background: #f5f7fb; border-radius: 14px; padding: 16px 22px; }
+    #state p { margin: 8px 0; display: flex; justify-content: space-between; align-items: baseline; }
+    #state strong { font-size: 24px; font-variant-numeric: tabular-nums; }
+    #state .detail { font-size: 14px; color: #52657d; }
+    #state .detail strong { font-size: 14px; }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 24px; }
+    button { border: 1px solid #ccd7e5; background: white; color: #172b46; border-radius: 10px; font: inherit; font-weight: 650; cursor: pointer; min-height: 48px; padding: 12px 14px; }
+    button:hover:enabled { background: #edf3fe; }
+    button:focus-visible { outline: 3px solid #82a9f5; outline-offset: 3px; }
+    button:disabled { opacity: .4; cursor: default; }
+    #confirm { background: #275bc0; color: white; border-color: #275bc0; }
+    #confirm:hover:enabled { background: #1a479f; }
+    #message { min-height: 48px; margin: 20px 0 14px; color: #3c5676; line-height: 1.5; }
+    #reset { width: 100%; background: #f5f7fb; }
+    @media (max-width: 480px) { body { padding: 20px 12px; } main { padding: 24px; } h1 { font-size: 26px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="eyebrow">외부 웹페이지 제어 예제</div>
+    <h1>목표 카운터 맞추기</h1>
+    <p class="intro">현재 값을 목표와 같게 만든 뒤 완료를 누르세요.<br>브라우저에서 직접 눌러도 같은 상태가 반영됩니다.</p>
+    <section id="state" aria-label="현재 상태" aria-live="polite">
+      <p>목표: <strong id="target">3</strong></p>
+      <p>현재: <strong id="count">0</strong></p>
+      <p class="detail">완료: <strong id="done">아니오</strong></p>
+      <p class="detail">리비전: <strong id="revision">0</strong></p>
+    </section>
+    <div class="actions">
+      <button id="decrease" type="button">1 줄이기</button>
+      <button id="increase" type="button">1 늘리기</button>
+      <button id="wait" type="button">기다리기</button>
+      <button id="confirm" type="button" disabled>완료</button>
+    </div>
+    <p id="message" role="status">현재 값을 읽고 다음 행동을 골라보세요.</p>
+    <button id="reset" type="button">새 판</button>
+  </main>
+  <script>
+    (() => {
+      const target = 3;
+      let count = 0, done = false, revision = 0;
+      const byId = id => document.getElementById(id);
+      function render(message) {
+        byId('count').textContent = count;
+        byId('done').textContent = done ? '예' : '아니오';
+        byId('revision').textContent = revision;
+        for (const id of ['increase', 'decrease', 'wait']) byId(id).disabled = done;
+        byId('confirm').disabled = done || count !== target;
+        byId('message').textContent = message;
+      }
+      for (const [id, delta] of [['increase', 1], ['decrease', -1]]) {
+        byId(id).addEventListener('click', () => {
+          if (done) return;
+          count += delta;
+          revision += 1;
+          render(count === target ? '목표와 같습니다. 완료를 눌러 결과를 확인하세요.' : '값이 바뀌었습니다. 목표와 다시 비교하세요.');
+        });
+      }
+      byId('wait').addEventListener('click', () => {
+        if (done) return;
+        revision += 1;
+        render('잠시 기다렸습니다. 현재 값은 그대로입니다.');
+      });
+      byId('confirm').addEventListener('click', () => {
+        if (done || count !== target) return;
+        done = true;
+        revision += 1;
+        render('성공! 현재 값과 목표가 같은 상태에서 완료했습니다.');
+      });
+      byId('reset').addEventListener('click', () => {
+        count = 0;
+        done = false;
+        revision += 1;
+        render('새 판을 시작했습니다. 현재 값을 목표에 맞춰보세요.');
+      });
+    })();
+  </script>
+</body>
+</html>

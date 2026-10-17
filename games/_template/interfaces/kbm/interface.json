@@ -1,5 +1,7 @@
 {
   "connector": "kbm",
+  "display": "visible",
+  "manual": "게임 창을 실행하고 observer.py를 실제 화면에 맞게 구현한 뒤, doctor로 확인하세요.",
   "window": {"owner": "GameAppName", "title_contains": ""},
   "interval_ms": 700,
   "max_age_ms": 800,
@@ -7,5 +9,5 @@
   "decision_keys": [],
   "pause_key": null,
   "reflex_hz": 0,
-  "actions": {"act": [{"tap": "space"}], "wait": []}
+  "actions": {"act": [], "wait": []}
 }

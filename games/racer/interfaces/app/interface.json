@@ -1,0 +1,38 @@
+{
+  "connector": "socket",
+  "display": "visible",
+  "continuous": true,
+  "interval_ms": 1000,
+  "max_age_ms": 2500,
+  "actions": {
+    "accelerate": "accelerate",
+    "brake": "brake",
+    "steer_left": "steer_left",
+    "steer_right": "steer_right",
+    "boost": "boost",
+    "keep": "keep"
+  },
+  "launch": {
+    "command": [
+      "{python}",
+      "-m",
+      "gamelab.desktop_game",
+      "--game",
+      "racer",
+      "--tick-ms",
+      "3000"
+    ],
+    "socket_arg": "--socket",
+    "sources": [
+      "gamelab/desktop_game.py",
+      "gamelab/presentation.py",
+      "gamelab/screens.py",
+      "sims/racer.py",
+      "sims/base.py",
+      "sims/service.py",
+      "gamelab/protocol.py",
+      "kbm/keys.py"
+    ]
+  },
+  "manual": "게임 창에서 키보드 또는 버튼으로 직접 조작할 수 있습니다. N으로 상황을 바꾸고 모델 실행을 눌러 입력을 비교하세요."
+}

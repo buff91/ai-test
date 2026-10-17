@@ -1,7 +1,6 @@
 {
   "name": "Racer · 3차선 레이스 (실시간 레이싱)",
   "type": "realtime.racing",
-  "interface": "socket",
   "policy": {
     "guards": [
       {
@@ -17,6 +16,48 @@
     "escalate": {
       "when": "danger >= 1.5",
       "to": "jev"
+    }
+  },
+  "version": "sim-v1",
+  "versions": {
+    "sim-v1": {
+      "name": "시뮬레이션 v1",
+      "description": "화면 없이 결정론적 전투/주행 규칙과 정답을 비교합니다. 입력마다 한 단계를 진행합니다.",
+      "interface": "socket",
+      "interfaces": {
+        "socket": {},
+        "attach": {}
+      }
+    },
+    "desktop-v1": {
+      "name": "화면 실습 v1",
+      "description": "실제 게임 창에서 직접 조작하고 Jev/Laya의 socket 또는 화면·키마 제어를 비교합니다.",
+      "interface": "app",
+      "interfaces": {
+        "app": {},
+        "attach": {
+          "display": "visible",
+          "continuous": true,
+          "socket": "/tmp/teaching-racer.sock",
+          "manual": "python -m gamelab.desktop_game --game racer --socket /tmp/teaching-racer.sock 로 먼저 실행하세요. 연결 해제해도 게임 창은 유지됩니다.",
+          "interval_ms": 1000,
+          "max_age_ms": 2500
+        },
+        "kbm": {}
+      }
+    }
+  },
+  "learning": {
+    "objective": "코너 전에 감속하고 장애물을 피해 40칸 트랙을 완주하세요. 모델 판단 중에도 차는 전진합니다.",
+    "controls": "↑: 가속 · ↓: 감속 · ←/→: 차선 이동 · SPACE: 부스트 · W: 유지 · N: 다음 상황 · P: 일시정지",
+    "observation": "게임 창 하단의 숫자·색상 계기를 화면 캡처로 읽습니다. 강의용 관찰기이며 범용 화면 인식 모델은 아닙니다.",
+    "actions": {
+      "accelerate": "가속",
+      "brake": "감속",
+      "steer_left": "왼쪽 차선",
+      "steer_right": "오른쪽 차선",
+      "boost": "부스트",
+      "keep": "유지"
     }
   }
 }

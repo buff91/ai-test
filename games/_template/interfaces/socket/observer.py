@@ -3,6 +3,8 @@
 Delete this file to send the game's own description (or the raw state JSON).
 """
 
+import json
+
 
 def describe(state):
-    return "The player's health is %s%%." % state.get("hp", "unknown")
+    return json.dumps(state, ensure_ascii=False)

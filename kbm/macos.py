@@ -16,12 +16,23 @@ def _quartz():
     return Quartz
 
 
+def _appkit():
+    try:
+        import AppKit
+    except ImportError as exc:
+        raise RuntimeError("PyObjC AppKit이 없습니다. 'uv sync'로 kbm 의존성을 설치하세요.") from exc
+    return AppKit
+
+
 class MacPlatform:
     """Finds the game window, captures it, and reports focus and cursor position."""
 
-    def __init__(self, owner, title_contains=""):
+    def __init__(self, owner, title_contains="", pid=None):
+        if pid is not None and (type(pid) is not int or pid <= 0):
+            raise ValueError("window.pid는 양의 정수여야 합니다.")
         self.owner = owner
         self.title_contains = title_contains
+        self.pid = pid
 
     def _windows(self):
         Q = _quartz()
@@ -35,6 +46,8 @@ class MacPlatform:
         for w in self._windows():
             if w.get("kCGWindowOwnerName") != self.owner:
                 continue
+            if self.pid is not None and w.get("kCGWindowOwnerPID") != self.pid:
+                continue
             if self.title_contains and self.title_contains not in (w.get("kCGWindowName") or ""):
                 continue
             b = w["kCGWindowBounds"]
@@ -45,17 +58,77 @@ class MacPlatform:
             Q = _quartz()
             hidden = [w for w in Q.CGWindowListCopyWindowInfo(Q.kCGWindowListOptionAll, Q.kCGNullWindowID) or []
                       if w.get("kCGWindowOwnerName") == self.owner and w.get("kCGWindowLayer", 0) == 0
+                      and (self.pid is None or w.get("kCGWindowOwnerPID") == self.pid)
                       and w["kCGWindowBounds"]["Height"] > 100]
             if hidden:
                 raise LookupError("%s 창이 화면에 없습니다. 최소화했거나 다른 데스크톱(Space)에 있으면 캡처할 수 없으니 "
                                   "화면에 보이게 해 주세요 (다른 창에 가려지는 것은 괜찮습니다)." % self.owner)
-            raise LookupError("게임 창을 찾지 못했습니다: owner=%r (게임이 실행 중인지 확인하세요)" % self.owner)
+            raise LookupError("게임 창을 찾지 못했습니다: owner=%r%s (게임이 실행 중인지 확인하세요)" %
+                              (self.owner, " pid=%s" % self.pid if self.pid is not None else ""))
         return max(matches, key=lambda m: m["width"] * m["height"])
 
     def is_frontmost(self, window):
         # The window list is ordered front to back, so the first normal window has focus.
         front = next(iter(self._windows()), None)
         return bool(front) and int(front["kCGWindowOwnerPID"]) == window["pid"]
+
+    def focus(self, window):
+        """Activate only a freshly observed target, then confirm its exact window.
+
+        This method sends no input and never runs from the observation/act guard.
+        The console calls it once for an explicit run, before model inference.
+        """
+        if not isinstance(window, dict) or any(type(window.get(k)) is not int or window[k] <= 0
+                                               for k in ("id", "pid")):
+            raise ValueError("관찰한 게임 창의 ID와 PID가 필요합니다.")
+        if self.pid is not None and window["pid"] != self.pid:
+            raise ValueError("관찰한 창의 PID가 연결된 게임과 다릅니다.")
+
+        def checked_windows():
+            windows = self._windows()
+            candidates = []
+            for candidate in windows:
+                if candidate.get("kCGWindowOwnerName") != self.owner:
+                    continue
+                if self.pid is not None and candidate.get("kCGWindowOwnerPID") != self.pid:
+                    continue
+                title = candidate.get("kCGWindowName")
+                # The source console may lack Screen Recording permission while
+                # KbmAgent has it. Its fresh observation fixes the exact ID/PID;
+                # redacted titles cannot be used to choose between processes.
+                if self.title_contains and title and self.title_contains not in title:
+                    continue
+                candidates.append(candidate)
+            selected = next((candidate for candidate in candidates
+                             if candidate.get("kCGWindowNumber") == window["id"]
+                             and candidate.get("kCGWindowOwnerPID") == window["pid"]), None)
+            if selected is None:
+                raise LookupError("관찰한 게임 창이 사라졌거나 연결 대상이 바뀌었습니다.")
+            if self.pid is None and len(candidates) != 1:
+                raise LookupError("같은 이름의 게임 창이 여러 개입니다. window.pid로 실행할 창을 지정하세요.")
+            return windows
+
+        def exact_front(windows):
+            front = next(iter(windows), None)
+            return bool(front) and front.get("kCGWindowNumber") == window["id"] \
+                and front.get("kCGWindowOwnerPID") == window["pid"]
+
+        windows = checked_windows()
+        appkit = _appkit()
+        application = appkit.NSRunningApplication.runningApplicationWithProcessIdentifier_(window["pid"])
+        if application is None or application.isTerminated():
+            raise LookupError("관찰한 게임 프로세스가 종료되었습니다.")
+        if exact_front(windows):
+            return {"ok": True, "focused": True, "window": dict(window), "activation_requested": False}
+        if not application.activateWithOptions_(appkit.NSApplicationActivateIgnoringOtherApps):
+            raise RuntimeError("운영체제가 게임 창 전환 요청을 거절했습니다.")
+        deadline = time.monotonic() + 1.0
+        while True:
+            if exact_front(checked_windows()):
+                return {"ok": True, "focused": True, "window": dict(window), "activation_requested": True}
+            if time.monotonic() >= deadline:
+                raise RuntimeError("선택한 게임 창이 전면으로 전환되지 않았습니다. 입력하지 않았습니다.")
+            time.sleep(.03)
 
     def capture(self, window):
         """Capture only the game window (even if partly covered) as a PIL image."""
@@ -136,6 +209,7 @@ class QuartzInput:
 
 class DryRunInput:
     """Records the events it would send; used by --dry-run and tests."""
+    dry_run = True
 
     def __init__(self):
         self.events = []

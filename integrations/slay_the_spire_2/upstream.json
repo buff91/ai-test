@@ -1,0 +1,11 @@
+{
+  "repository": "https://github.com/Gennadiyev/STS2MCP.git",
+  "commit": "55e064850a68f3b4cde7e5fd525bf9b2dec4e885",
+  "upstream_mod_version": "0.4.0",
+  "patch_id": "ai-test-v1",
+  "license": "MIT",
+  "license_file": "LICENSE.upstream",
+  "sdk_tested": "9.0.319",
+  "game_version_compiled_against": "v0.107.1",
+  "platform_compiled_on": "macos-arm64"
+}

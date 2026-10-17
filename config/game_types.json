@@ -1,50 +1,37 @@
 {
-  "turn.tactics": {
-    "label": "턴제 · 전술",
-    "timing": "turn",
-    "genre": "tactics",
-    "latency_budget_ms": 3000,
-    "providers": {"live": "jev", "shadow": ["laya-mlx"]},
-    "note": "게임이 판단을 기다리므로 지연보다 판단 품질을 우선"
-  },
-  "turn.card": {
-    "label": "턴제 · 카드/덱빌딩",
-    "timing": "turn",
-    "genre": "card",
-    "latency_budget_ms": 5000,
-    "providers": {"live": "jev", "shadow": ["laya-mlx"]},
-    "note": "손패·에너지·적 의도를 함께 따져야 해서 긴 상태 설명을 다룸"
-  },
   "turn.rpg": {
     "label": "턴제 · RPG 전투",
     "timing": "turn",
     "genre": "rpg",
     "latency_budget_ms": 3000,
-    "providers": {"live": "jev", "shadow": ["laya-mlx"]},
+    "providers": {
+      "live": "jev",
+      "shadow": [
+        "laya-mlx"
+      ]
+    },
     "note": "파티 체력·자원 관리 판단"
-  },
-  "realtime.action": {
-    "label": "실시간 · 액션/슈터",
-    "timing": "realtime",
-    "genre": "action",
-    "latency_budget_ms": 150,
-    "providers": {"live": "laya-mlx", "shadow": []},
-    "note": "판단이 늦으면 버려지므로 로컬 모델 우선. Jev는 matrix로 품질만 비교"
-  },
-  "realtime.topdown": {
-    "label": "실시간 · 탑다운 ARPG/MOBA",
-    "timing": "realtime",
-    "genre": "topdown",
-    "latency_budget_ms": 300,
-    "providers": {"live": "laya-mlx", "shadow": []},
-    "note": "일시정지가 가능한 게임이면 Jev를 live로 써 볼 수 있음"
   },
   "realtime.racing": {
     "label": "실시간 · 레이싱",
     "timing": "realtime",
     "genre": "racing",
     "latency_budget_ms": 100,
-    "providers": {"live": "laya-mlx", "shadow": []},
+    "providers": {
+      "live": "laya-mlx",
+      "shadow": []
+    },
     "note": "가장 빡빡한 지연 예산"
+  },
+  "realtime.moba": {
+    "label": "실시간 · MOBA",
+    "timing": "realtime",
+    "genre": "moba",
+    "latency_budget_ms": 300,
+    "providers": {
+      "live": "laya-mlx",
+      "shadow": []
+    },
+    "note": "라인·미니언·타워·기지 상태를 보고 교전과 후퇴 판단"
   }
 }

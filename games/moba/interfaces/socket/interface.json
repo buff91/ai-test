@@ -1,0 +1,25 @@
+{
+  "connector": "socket",
+  "display": "headless",
+  "launch": {
+    "command": [
+      "{python}",
+      "-m",
+      "sims",
+      "serve",
+      "moba"
+    ],
+    "socket_arg": "--socket"
+  },
+  "interval_ms": 300,
+  "actions": {
+    "advance": "advance",
+    "retreat": "retreat",
+    "attack": "attack",
+    "skill": "skill",
+    "recall": "recall",
+    "lane_left": "lane_left",
+    "lane_right": "lane_right",
+    "wait": "wait"
+  }
+}

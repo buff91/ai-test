@@ -1,0 +1,49 @@
+{
+  "name": "MOBA · 3라인 공성전",
+  "type": "realtime.moba",
+  "policy": {},
+  "version": "sim-v1",
+  "learning": {
+    "objective": "세 라인의 미니언과 포탑을 살피고 영웅을 조작해 적 코어를 파괴하세요. 모델 판단 중에도 전투는 진행됩니다.",
+    "controls": "W/S: 전진/후퇴 · SPACE: 공격 · Q: 스킬 · B: 귀환 · A/D: 라인 이동 · E: 대기 · N: 다음 상황 · P: 일시정지",
+    "observation": "게임 창 하단의 숫자·색상 계기를 화면 캡처로 읽습니다. 강의용 관찰기이며 범용 화면 인식 모델은 아닙니다.",
+    "actions": {
+      "advance": "전진",
+      "retreat": "후퇴",
+      "attack": "공격",
+      "skill": "회전 베기",
+      "recall": "귀환 · 회복",
+      "lane_left": "상단 이동",
+      "lane_right": "하단 이동",
+      "wait": "대기"
+    }
+  },
+  "versions": {
+    "sim-v1": {
+      "name": "시뮬레이션 v1",
+      "description": "화면 없이 결정론적 전투/주행 규칙과 정답을 비교합니다. 입력마다 한 단계를 진행합니다.",
+      "interface": "socket",
+      "interfaces": {
+        "socket": {},
+        "attach": {}
+      }
+    },
+    "desktop-v1": {
+      "name": "화면 실습 v1",
+      "description": "실제 게임 창에서 직접 조작하고 Jev/Laya의 socket 또는 화면·키마 제어를 비교합니다.",
+      "interface": "app",
+      "interfaces": {
+        "app": {},
+        "attach": {
+          "display": "visible",
+          "continuous": true,
+          "socket": "/tmp/teaching-moba.sock",
+          "manual": "python -m gamelab.desktop_game --game moba --socket /tmp/teaching-moba.sock 로 먼저 실행하세요. 연결 해제해도 게임 창은 유지됩니다.",
+          "interval_ms": 1000,
+          "max_age_ms": 2500
+        },
+        "kbm": {}
+      }
+    }
+  }
+}
