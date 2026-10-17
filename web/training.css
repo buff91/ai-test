@@ -19,6 +19,7 @@
 .training-case-grid { margin-top: 12px; }
 .training-case-grid > details, .training-label-fields > div, .training-options > div { min-width: 0; }
 .training-pre { max-height: 210px; margin: 8px 0 12px; padding: 10px; border: 1px solid #354755; border-radius: 5px; background: #0b151e; color: #c6d8df; font: 12px/1.8 ui-monospace, monospace; overflow: auto; overflow-wrap: anywhere; white-space: pre-wrap; }
+.training-step input[type="number"] { display: block; width: 100%; min-width: 0; padding: 10px; background: #0f1821; border: 1px solid #536573; border-radius: 5px; color: var(--text); font: inherit; font-size: 13px; }
 .training-step textarea { display: block; width: 100%; min-height: 90px; resize: vertical; padding: 10px; background: #0b151e; border: 1px solid #536573; border-radius: 5px; color: var(--text); font: 12px/1.7 ui-monospace, monospace; }
 .training-step textarea:focus { outline: 2px solid #a7e6ca55; outline-offset: 1px; border-color: var(--cyan); }
 .training-step .field-note { font-size: 12px; }

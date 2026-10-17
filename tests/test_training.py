@@ -155,7 +155,7 @@ class TrainingManagerTests(unittest.TestCase):
 
     def test_regression_or_inference_failure_cannot_be_applied(self):
         checkpoint = self.train()
-        for before, after, failures in ((1, .5, 0), (.5, 1, 1)):
+        for before, after, failures in ((1, .5, 0), (.5, 1, 1), (0, 0, 0)):
             with self.subTest(before=before, after=after, failures=failures):
                 status = self.evaluate(checkpoint, before, after, failures)
                 self.assertFalse(status["checkpoints"][0]["activation_allowed"])
@@ -286,6 +286,14 @@ class EvaluationTests(unittest.TestCase):
             evaluation = {"held_out": True, "eval_count": 1, "before": metrics, "after": metrics}
             self.assertFalse(promotion_gate(evaluation)["allowed"])
 
+    def test_out_of_range_or_missing_score_is_an_inference_failure(self):
+        agent = Mock()
+        for score in (None, float("nan"), 2, True):
+            answers = self.answers()
+            answers["level"]["score"] = score
+            agent.predict.return_value = {"answers": answers}
+            self.assertEqual(evaluate_agent(agent, [self.row()])["inference_failures"], 1)
+
     def test_unlabeled_or_invalid_eval_actions_cannot_be_silently_skipped(self):
         row = self.row()
         row["expected"].pop("action")
@@ -324,6 +332,58 @@ class EvaluationTests(unittest.TestCase):
             self.assertEqual(sdk.load.call_args_list[1].args, (checkpoint["path"],))
             self.assertEqual(agents[0].predict.call_args, agents[1].predict.call_args)
             self.assertTrue(result["evaluation"]["gate"]["allowed"])
+
+    def test_training_worker_calls_sdk_with_frozen_paths_and_publishes_only_valid_heldout_run(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            snapshot = FixtureStore(root).freeze(game(), "run")
+            base = model(root / "base")
+            configs = []
+            prepared = []
+
+            def prepare(path):
+                path = Path(path)
+                prepared.append(path)
+                config_file = path / "tokenizer" / "tokenizer_config.json"
+                # Reproduce SDK's on-load compatibility rewrite. It must happen
+                # before either baseline or candidate fingerprint is sealed.
+                config_file.write_text(json.dumps({"tokenizer_class": "PreTrainedTokenizerFast"}))
+
+            def config(**kwargs):
+                configs.append(kwargs)
+                return SimpleNamespace(**kwargs)
+
+            def finetune(data, model_dir, output_dir, **kwargs):
+                self.assertEqual((data, model_dir), (snapshot["train_path"], str(base)))
+                self.assertEqual(kwargs["config"].eval_data, snapshot["eval_path"])
+                model(Path(output_dir))
+                return {"train_items": 1, "eval_items": 1, "train_report": {"is_held_out": True}, "epoch_loss": [.5]}
+
+            sdk = SimpleNamespace(TrainConfig=Mock(side_effect=config), finetune=Mock(side_effect=finetune),
+                                  resolve_checkpoint_dir=Mock(return_value=str(base)))
+            request = {"kind": "train", "work_dir": str(root / "racer" / "runs" / "run" / "training"),
+                       "snapshot": snapshot, "dataset_fingerprints": dataset_fingerprints(snapshot),
+                       "options": {"freeze_encoder": True}, "checkpoint_id": "laya-fixture", "run_id": "run",
+                       "game": "racer", "context": _context(game())}
+            agent_sdk = SimpleNamespace(_fix_tokenizer_config=prepare)
+            with patch.dict("sys.modules", {"laya.train": sdk, "laya.agent": agent_sdk}):
+                result = run_worker(request)
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["checkpoint"]["base_path"], str(base.resolve()))
+            self.assertTrue(configs[0]["freeze_encoder"])
+            self.assertEqual(configs[0]["loss"], "soft-ce")
+            self.assertEqual(configs[0]["shuffle_options"], ("choice",))
+            self.assertEqual([path.resolve() for path in prepared], [base.resolve(), Path(result["checkpoint"]["path"])])
+            sealed = result["checkpoint"]["artifact_hash"]
+            prepare(result["checkpoint"]["path"])
+            self.assertEqual(checkpoint_fingerprint(result["checkpoint"]["path"]), sealed,
+                             "SDK's later model load must not change the sealed artifact")
+            self.assertTrue((Path(request["work_dir"]).parent / "checkpoint-manifest.json").is_file())
+
+            sdk.finetune.side_effect = None
+            sdk.finetune.return_value = {"eval_items": 1, "train_report": {"is_held_out": False}}
+            with patch.dict("sys.modules", {"laya.train": sdk, "laya.agent": agent_sdk}), self.assertRaises(ValueError):
+                run_worker(request)
 
 
 if __name__ == "__main__":

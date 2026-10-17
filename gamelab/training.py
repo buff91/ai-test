@@ -226,7 +226,8 @@ class TrainingManager:
                 else:
                     checkpoint = self._checkpoint(game, job["checkpoint_id"])
                     evaluation = result["evaluation"]
-                    if evaluation["artifact_hash"] != checkpoint["artifact_hash"] or evaluation["dataset_hash"] != checkpoint["dataset_hash"]:
+                    if (evaluation["artifact_hash"] != checkpoint["artifact_hash"] or evaluation["dataset_hash"] != checkpoint["dataset_hash"]
+                            or evaluation["base_hash"] != checkpoint["base_hash"]):
                         raise ValueError("평가의 체크포인트/데이터 지문이 일치하지 않습니다.")
                     checkpoint.update(evaluation=evaluation,
                                       activation_allowed=evaluation["gate"]["allowed"], reasons=evaluation["gate"]["reasons"])
@@ -292,6 +293,9 @@ class TrainingManager:
             snapshot = {key: str(value) if isinstance(value, Path) else value
                         for key, value in self.store.freeze(game, run_id).items()}
             self._check_paths(game, snapshot)
+            context = _context(game)
+            if snapshot.get("version", context["version"]) != context["version"] or (context["schema_hash"] and snapshot.get("schema_hash") != context["schema_hash"]):
+                raise ValueError("고정 데이터셋의 버전/질문 스키마가 현재 게임과 다릅니다.")
             if snapshot["train_count"] < 1 or snapshot["eval_count"] < 1:
                 raise ValueError("학습용과 독립 평가용 사례가 모두 필요합니다.")
             fingerprints = dataset_fingerprints(snapshot)
@@ -342,7 +346,8 @@ class TrainingManager:
             if not evaluation or not promotion_gate(evaluation)["allowed"]:
                 raise ValueError("적용 조건을 통과한 독립 평가가 필요합니다.")
             self._verify_checkpoint(game, checkpoint, force=True)
-            if evaluation["artifact_hash"] != checkpoint["artifact_hash"] or evaluation["dataset_hash"] != checkpoint["dataset_hash"]:
+            if (evaluation["artifact_hash"] != checkpoint["artifact_hash"] or evaluation["dataset_hash"] != checkpoint["dataset_hash"]
+                    or evaluation["base_hash"] != checkpoint["base_hash"]):
                 raise ValueError("평가 지문이 변경되었습니다.")
             version = _context(game)["version"]
             current = registry["active_by_version"].get(version)
@@ -502,6 +507,10 @@ def evaluate_agent(agent, rows, progress=None):
                         invalid_labels += 1
                         raise ValueError("예측 행동이 질문 선택지에 없습니다.")
                     predicted = keys.index(answer["choice"])
+                elif question["type"] == "score":
+                    score = answer.get("score")
+                    if isinstance(score, bool) or not isinstance(score, (int, float)) or not math.isfinite(score) or not 0 <= score <= len(keys) - 1:
+                        raise ValueError("예측 점수가 질문 범위를 벗어났습니다.")
                 best = max(target)
                 correct = target[predicted] == best
                 brier = sum((value - gold) ** 2 for value, gold in zip(probabilities, target))
@@ -528,7 +537,8 @@ def evaluate_agent(agent, rows, progress=None):
 def promotion_gate(evaluation):
     before, after = evaluation.get("before", {}), evaluation.get("after", {})
     reasons = []
-    if not evaluation.get("held_out") or not evaluation.get("eval_count", 0):
+    count = evaluation.get("eval_count", 0)
+    if evaluation.get("held_out") is not True or type(count) is not int or count < 1:
         reasons.append("비어 있지 않은 독립 평가가 필요합니다.")
     for name, result in (("기본 모델", before), ("새 모델", after)):
         if result.get("inference_failures", 1) or result.get("invalid_labels", 1):
@@ -536,14 +546,26 @@ def promotion_gate(evaluation):
         if not result.get("action_count") or result.get("action_count") != evaluation.get("eval_count"):
             reasons.append("%s가 모든 평가 행동을 답하지 못했습니다." % name)
     b, a = before.get("action_accuracy"), after.get("action_accuracy")
-    if not isinstance(b, (int, float)) or not isinstance(a, (int, float)) or not math.isfinite(b) or not math.isfinite(a) or a < b:
+    if (isinstance(b, bool) or isinstance(a, bool) or not isinstance(b, (int, float)) or not isinstance(a, (int, float))
+            or not math.isfinite(b) or not math.isfinite(a) or not 0 <= b <= a <= 1):
         reasons.append("새 모델의 행동 정답률이 기본 모델 이상이어야 합니다.")
+    elif a == 0:
+        reasons.append("새 모델이 평가 행동을 한 개 이상 맞혀야 합니다.")
     return {"allowed": not reasons, "reasons": reasons}
 
 
 def _progress(work, stage, progress):
     _write(Path(work) / "progress.json", {"stage": stage, "progress": progress})
     print(stage, flush=True)
+
+
+def _prepare_checkpoint(path):
+    # finetune's tokenizer.save_pretrained may write TokenizersBackend. laya.load
+    # repairs that on disk, so normalize before sealing the immutable artifact.
+    # Do the same before pinning a newly downloaded baseline: finetune's loader
+    # uses this exact compatibility hook too.
+    from laya.agent import _fix_tokenizer_config
+    _fix_tokenizer_config(str(path))
 
 
 def run_worker(request):
@@ -557,6 +579,7 @@ def run_worker(request):
             raise ValueError("고정 데이터셋이 변경되었습니다.")
         _progress(work, "기본 체크포인트 준비", .02)
         base_path = resolve_checkpoint_dir(options["base"])
+        _prepare_checkpoint(base_path)
         base_hash = checkpoint_fingerprint(base_path, trusted_base=True)
         output = work.parent / "checkpoint"
         _progress(work, "학습 중", .05)
@@ -565,6 +588,7 @@ def run_worker(request):
         summary = finetune(snapshot["train_path"], base_path, str(output), config=config)
         if not summary.get("train_report", {}).get("is_held_out") or not summary.get("eval_items", 0):
             raise ValueError("토큰화 후 학습/평가 입력이 겹치거나 평가 사례를 사용할 수 없습니다.")
+        _prepare_checkpoint(output)
         artifact_hash = checkpoint_fingerprint(output)
         if checkpoint_fingerprint(base_path, trusted_base=True) != base_hash or dataset_fingerprints(snapshot) != request["dataset_fingerprints"]:
             raise ValueError("학습 중 기본 모델 또는 데이터셋이 변경되었습니다.")

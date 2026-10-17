@@ -19,22 +19,22 @@
       <div id="training-counts" class="training-counts"></div>
       <div class="training-columns"><div class="training-workflow">
         <section class="training-step"><h3>1. 실패 사례 수집 · 정답 검토</h3><p class="field-note">실패한 판단은 자동으로 검토 대기에 모입니다. 기준 규칙의 제안은 직접 확인하고 승인하세요. 반복된 같은 상태는 하나로 합쳐집니다.</p>
-          <div class="action-row training-actions"><button id="training-collect" type="button" class="button-secondary">최근 실패 다시 수집</button><button id="training-refresh" type="button" class="button-ghost">새로고침</button></div>
-          <div class="training-bookmark"><label for="training-bookmark">추가로 남길 판단</label><select id="training-bookmark"><option value="">현재 게임의 판단 기록 없음</option></select><button id="training-bookmark-add" type="button" class="button-ghost">이 판단을 검토 대기에 저장</button></div>
+          <div class="action-row training-actions"><button id="training-collect" type="button" disabled class="button-secondary">최근 실패 다시 수집</button><button id="training-refresh" type="button" disabled class="button-ghost">새로고침</button></div>
+          <div class="training-bookmark"><label for="training-bookmark">추가로 남길 판단</label><select id="training-bookmark"><option value="">현재 게임의 판단 기록 없음</option></select><button id="training-bookmark-add" type="button" disabled class="button-ghost">이 판단을 검토 대기에 저장</button></div>
           <label for="training-case">저장된 사례</label><select id="training-case"><option value="">저장된 사례 없음</option></select>
           <div id="training-case-empty" class="training-empty">게임을 실행하면 실패 사례가 모입니다. 게임 연결 없이도 저장된 사례를 검토할 수 있습니다.</div>
           <div id="training-review" hidden><p id="training-case-note" class="field-note"></p><div class="training-case-grid"><details open><summary>당시 모델 입력</summary><pre id="training-state" class="training-pre"></pre></details><details open><summary>모델의 답 · 기준 제안</summary><pre id="training-answer" class="training-pre"></pre></details></div><details><summary>당시 질문 · 선택지</summary><pre id="training-questions" class="training-pre"></pre></details>
             <div class="training-label-fields"><div><label for="training-action">확인한 정답 행동</label><select id="training-action"></select></div><div><label for="training-split">사용할 데이터</label><select id="training-split"><option value="train">학습용 · 가중치 업데이트</option><option value="eval">평가용 · 학습에서 제외</option></select></div></div>
             <label for="training-expected">보조 질문 정답 (JSON)</label><textarea id="training-expected" rows="4" spellcheck="false" aria-describedby="training-expected-help">{}</textarea><p id="training-expected-help" class="field-note">확인한 질문만 남기세요. Choice는 선택지 이름, Score는 단계 번호, Noul은 true/false입니다. action은 위에서 선택합니다. 예: {"danger": 2, "crash_ahead": true}</p>
-            <div class="action-row training-actions"><button id="training-approve" type="button" class="button-primary">정답 확인 · 승인 저장</button><button id="training-exclude" type="button" class="button-ghost">이 사례 제외</button></div>
+            <div class="action-row training-actions"><button id="training-approve" type="button" disabled class="button-primary">정답 확인 · 승인 저장</button><button id="training-exclude" type="button" disabled class="button-ghost">이 사례 제외</button></div>
           </div>
         </section>
         <section class="training-step"><h3>2. Laya 파인튜닝</h3><p id="training-ready" class="field-note">승인된 학습용과 평가용 사례가 각각 1개 이상 필요합니다. 같은 상태는 두 집합에 나눠 넣을 수 없습니다.</p>
           <div class="training-options"><div><label for="training-base">기본 모델</label><select id="training-base"><option value="multilingual">Multilingual · 다국어</option><option value="english">English · 영어</option><option value="typed-decisions">Typed decisions</option></select></div><div><label for="training-epochs">학습 반복 횟수</label><input id="training-epochs" type="number" min="1" max="100" step="1" value="4"></div><div><label for="training-encoder-lr">인코더 학습률</label><input id="training-encoder-lr" type="number" min="0.00000001" max="0.01" step="any" value="0.000025"></div><div><label for="training-head-lr">헤드 학습률</label><input id="training-head-lr" type="number" min="0.00000001" max="0.01" step="any" value="0.0001"></div></div>
-          <label class="check training-freeze"><input id="training-freeze" type="checkbox"><span>인코더 고정 · 판단 헤드만 학습</span></label><div class="action-row training-actions"><button id="training-train" type="button" class="button-primary">새 체크포인트 학습 시작</button></div><p class="field-note">학습 작업은 백그라운드에서 진행합니다. 처음 사용할 기본 모델은 다운로드가 필요할 수 있습니다.</p>
+          <label class="check training-freeze"><input id="training-freeze" type="checkbox"><span>인코더 고정 · 판단 헤드만 학습</span></label><div class="action-row training-actions"><button id="training-train" type="button" disabled class="button-primary">새 체크포인트 학습 시작</button></div><p class="field-note">학습 작업은 백그라운드에서 진행합니다. 처음 사용할 기본 모델은 다운로드가 필요할 수 있습니다.</p>
         </section>
       </div><div class="training-results">
-        <section class="training-step"><h3>3. 평가 · 게임에 적용</h3><p class="field-note">승인한 평가용 사례에서 기본 모델과 새 체크포인트를 비교합니다. 평가 통과 후 직접 적용하세요.</p><div id="training-active" class="training-active">Laya · 기본 모델</div><div class="action-row training-actions"><button id="training-rollback" type="button" class="button-ghost">이 게임의 Laya를 기본 모델로 복원</button></div><div id="training-checkpoints"></div></section>
+        <section class="training-step"><h3>3. 평가 · 게임에 적용</h3><p class="field-note">승인한 평가용 사례에서 기본 모델과 새 체크포인트를 비교합니다. 평가 통과 후 직접 적용하세요.</p><div id="training-active" class="training-active">Laya · 기본 모델</div><div class="action-row training-actions"><button id="training-rollback" type="button" disabled class="button-ghost">이 게임의 Laya를 기본 모델로 복원</button></div><div id="training-checkpoints"></div></section>
         <section class="training-step"><h3>작업과 실행 로그</h3><div id="training-jobs" class="training-jobs"><p class="field-note">아직 작업이 없습니다.</p></div></section>
       </div></div>`;
   }
@@ -83,7 +83,7 @@
     const item = selectedCase();
     $('review').hidden = !item;
     $('case-empty').hidden = !!item;
-    const key = item ? json([currentGame?.id, item.id, item.review, item.split, item.expected]) : '';
+    const key = item ? json([currentGame?.id, item.id, item.review, item.split, item.expected, item.compatible, item.incompatible_reason]) : '';
     if (!force && editorKey === key) return;
     editorKey = key;
     if (!item) return;
@@ -93,7 +93,8 @@
     const valid = choices.includes(suggested);
     $('case-note').textContent = `${reviewNames[item.review] || '검토 대기'} · ${item.reason || '직접 저장'} · ${item.occurrences || 1}회 수집 · ${item.id}${item.compatible === false ? ` · 승인 불가: ${item.incompatible_reason || '현재 질문 설정과 다릅니다.'}` : ''}`;
     $('state').textContent = typeof item.state === 'string' ? item.state : json(item.state);
-    $('answer').textContent = json({모델의_답: item.model_answer ?? item.decision ?? item.source?.decision ?? item.source?.answer ?? item.source, 기준_정답_제안: item.suggested_expected || {}, 승인한_정답: item.review === 'approved' ? item.expected : '아직 승인하지 않음'});
+    const answers = item.model_answer ?? item.decision ?? (item.source?.decision ? {제어_모델: item.source.decision, 비교_모델: item.source.shadow || []} : item.source?.answer ?? item.source);
+    $('answer').textContent = json({모델의_답: answers, 기준_종류: item.source?.reference_kind || '기준 정보 없음', 기준_정답_제안: item.suggested_expected || {}, 승인한_정답: item.review === 'approved' ? item.expected : '아직 승인하지 않음'});
     $('questions').textContent = json(item.questions);
     $('action').innerHTML = '<option value="">정답 행동을 선택하세요</option>' + choices.map(label => `<option value="${esc(label)}">${esc(currentGame?.learning?.actions?.[label] || label)} · ${esc(label)}</option>`).join('');
     $('action').value = valid ? suggested : '';
@@ -114,20 +115,20 @@
   function metricTable(evaluation) {
     if (!evaluation) return '<p class="field-note">아직 평가하지 않았습니다.</p>';
     const metrics = [['action_accuracy', '행동 정답률', true], ['accuracy', '전체 질문 정답률', true], ['brier', 'Brier · 낮을수록 좋음'], ['ece', '보정 오차 · 낮을수록 좋음'], ['mean_latency_ms', '평균 응답 시간 (ms)'], ['p95_latency_ms', 'P95 응답 시간 (ms)'], ['inference_failures', '추론 실패 수']];
-    return `<div class="training-table-wrap"><table class="training-metrics"><thead><tr><th scope="col">평가용 ${esc(evaluation.eval_count ?? evaluation.after?.rows ?? '—')}개</th><th scope="col">기본 모델</th><th scope="col">새 모델</th></tr></thead><tbody>${metrics.map(([key, title, percent]) => `<tr><th scope="row">${title}</th><td>${esc(fmt(evaluation.before?.[key], percent))}</td><td>${esc(fmt(evaluation.after?.[key], percent))}</td></tr>`).join('')}</tbody></table></div><p class="field-note">${evaluation.held_out === true ? '학습에서 제외한 평가용 사례로 측정했습니다.' : '평가 데이터의 분리 여부를 확인하세요.'} 이 사례 집합의 결과이며 실제 게임 승률을 뜻하지 않습니다.</p>`;
+    return `<div class="training-table-wrap"><table class="training-metrics"><thead><tr><th scope="col">평가용 ${esc(evaluation.eval_count ?? evaluation.after?.rows ?? '—')}개</th><th scope="col">기본 모델</th><th scope="col">새 모델</th></tr></thead><tbody>${metrics.map(([key, title, percent]) => `<tr><th scope="row">${title}</th><td>${esc(fmt(evaluation.before?.[key], percent))}</td><td>${esc(fmt(evaluation.after?.[key], percent))}</td></tr>`).join('')}</tbody></table></div><p class="field-note">${evaluation.held_out === true ? '학습에서 제외한 평가용 사례로 측정했습니다.' : '평가 데이터의 분리 여부를 확인하세요.'} 이 사례 집합의 결과이며 실제 게임 승률을 뜻하지 않습니다.</p><details class="training-evaluation-detail"><summary>질문별 평가 결과 · 상세</summary><pre class="training-pre">${esc(json({기본_모델: evaluation.before, 새_모델: evaluation.after}))}</pre></details>`;
   }
   function renderCheckpoints() {
     $('active').textContent = snapshot?.active ? `이 게임에 적용 중 · ${snapshot.active.checkpoint_id}` : '이 게임의 Laya · 기본 모델 사용 중';
-    $('checkpoints').innerHTML = (snapshot?.checkpoints || []).map(item => {
+    $('checkpoints').innerHTML = (snapshot?.checkpoints || []).slice().reverse().map(item => {
       const allowed = item.activation_allowed === true;
       const reasons = item.reasons || item.evaluation?.gate?.reasons || [];
       return `<article class="training-checkpoint"><div class="training-checkpoint-title"><b>${esc(item.id)}</b><span class="${allowed ? 'good' : 'warn'}">${allowed ? '적용 가능' : '적용 전 평가 확인'}</span></div><p class="field-note">${esc(item.base || 'Laya')} · ${esc(fmtDate(item.created_at))}</p>${metricTable(item.evaluation)}${reasons.length ? `<p class="training-warning">${esc(Array.isArray(reasons) ? reasons.join(' · ') : reasons)}</p>` : ''}<div class="action-row training-actions"><button type="button" class="button-secondary" data-training-action="evaluate" data-checkpoint="${esc(item.id)}">기본 모델과 비교 평가</button><button type="button" class="button-primary" data-training-action="apply" data-checkpoint="${esc(item.id)}" ${allowed ? '' : 'disabled'}>Laya로 전환해 적용</button></div></article>`;
     }).join('') || '<p class="training-empty">아직 학습한 체크포인트가 없습니다.</p>';
   }
   function renderJobs() {
-    $('jobs').innerHTML = (snapshot?.jobs || []).map(job => {
+    $('jobs').innerHTML = (snapshot?.jobs || []).slice().reverse().map(job => {
       const progress = Number.isFinite(job.progress) ? Math.max(0, Math.min(1, job.progress)) : null;
-      return `<article class="training-job"><div><b>${esc(job.kind === 'train' ? '파인튜닝' : job.kind === 'evaluate' ? '체크포인트 평가' : job.kind)}</b><span class="${job.status === 'failed' ? 'bad' : ['succeeded', 'completed'].includes(job.status) ? 'good' : 'warn'}">${esc(jobNames[job.status] || job.status)}</span></div><p class="field-note">${esc(job.stage || job.id)}${progress !== null ? ` · ${Math.round(progress * 100)}%` : ''}</p>${job.error ? `<p class="training-warning">${esc(job.error)}</p>` : ''}${job.log_tail?.length ? `<details ${job.status === 'failed' ? 'open' : ''}><summary>실행 로그</summary><pre class="training-pre">${esc(Array.isArray(job.log_tail) ? job.log_tail.join('\n') : job.log_tail)}</pre></details>` : ''}</article>`;
+      return `<article class="training-job"><div><b>${esc(job.kind === 'train' ? '파인튜닝' : job.kind === 'evaluate' ? '체크포인트 평가' : job.kind)}</b><span class="${job.status === 'failed' ? 'bad' : ['succeeded', 'completed'].includes(job.status) ? 'good' : 'warn'}">${esc(jobNames[job.status] || job.status)}</span></div><p class="field-note">${esc(job.checkpoint_id || job.id)} · ${esc(job.stage || '')}${progress !== null ? ` · ${Math.round(progress * 100)}%` : ''}</p>${job.error ? `<p class="training-warning">${esc(job.error)}</p>` : ''}${job.log_tail?.length ? `<details ${job.status === 'failed' ? 'open' : ''}><summary>실행 로그</summary><pre class="training-pre">${esc(Array.isArray(job.log_tail) ? job.log_tail.join('\n') : job.log_tail)}</pre></details>` : ''}</article>`;
     }).join('') || '<p class="field-note">아직 학습·평가 작업이 없습니다.</p>';
   }
   function render() {
@@ -150,7 +151,8 @@
     loading = true; lastFetch = Date.now(); applyButtons(); renderMessage();
     try {
       const result = await config.api(`/api/training?game=${encodeURIComponent(game)}${currentVersion ? `&version=${encodeURIComponent(currentVersion)}` : ''}`);
-      if (epoch !== generation || result.game !== game || (result.version && currentVersion && result.version !== currentVersion)) return;
+      if (epoch !== generation) return;
+      if (result.game !== game || (result.version && currentVersion && result.version !== currentVersion)) throw new Error('서버 응답의 게임·버전이 현재 선택과 다릅니다. 새로고침하세요.');
       snapshot = result; failed = false;
       if (noticeError) { notice = ''; noticeError = false; }
       render();
@@ -177,6 +179,7 @@
   function review(approval) {
     const item = selectedCase();
     if (!item) return;
+    if (approval && item.compatible === false) return setMessage(`이 사례는 승인할 수 없습니다: ${item.incompatible_reason || '현재 질문 설정과 다릅니다.'}`, true);
     let expected = {};
     try {
       if (approval) {

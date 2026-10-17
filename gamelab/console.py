@@ -167,6 +167,7 @@ class Lab:
         self.link = {"last_ok_at": None, "rtt_ms": None, "failures": 0, "last_error": None, "last_op": None}
         self.phase = {"name": "대기", "since": time.time()}
         self.calls = []
+        self.completed_shadows = {}
         self.preparations = []
         self.activity = None
         self.run_focus = None
@@ -396,24 +397,34 @@ class Lab:
                 self.calls.remove(call)
                 self.calls.insert(0, call)
             if call.get("role") == "shadow" and self.game is not None:
-                # Real-time comparisons finish after their control tick. Grade
-                # against that exact request, never the newest game frame.
+                self.completed_shadows[call["id"]] = {"call": deepcopy(call), "result": deepcopy(row)}
+                while len(self.completed_shadows) > CALLS_KEPT:
+                    del self.completed_shadows[next(iter(self.completed_shadows))]
                 for original in self.rows:
-                    if (original.get("step") != call.get("step") or original.get("episode") != call.get("episode")
-                            or original.get("request") != {k: call["request"][k] for k in ("state", "questions")}):
-                        continue
-                    for index, shadow in enumerate(original.get("shadow", [])):
-                        if (shadow.get("provider") != call["provider"] or shadow.get("status") != "running"
-                                or not shadow.get("current_observation", True)):
-                            continue
-                        completed = {**deepcopy(row), "source_step": original["step"],
-                                     "source_episode": original["episode"], "current_observation": True,
-                                     "agrees": row.get("action") == original.get("action")}
-                        completed["grade"] = grade.grade(row.get("answers"), original.get("truth"),
-                                                         original["request"]["questions"]) if row.get("status") == "ok" else None
-                        original["shadow"][index] = completed
-                        self._capture_failure(self.game, original)
-                    break
+                    self._reconcile_shadows_locked(original)
+
+    def _reconcile_shadows_locked(self, original, capture=True):
+        # A comparison can finish before or after its control row is inserted.
+        # Match the original observation in both cases, never the current frame.
+        for call_id, item in list(self.completed_shadows.items()):
+            call, result = item["call"], item["result"]
+            if (original.get("step") != call.get("step") or original.get("episode") != call.get("episode")
+                    or original.get("request") != {k: call["request"][k] for k in ("state", "questions")}):
+                continue
+            for index, shadow in enumerate(original.get("shadow", [])):
+                if (shadow.get("provider") != call["provider"] or shadow.get("status") != "running"
+                        or not shadow.get("current_observation", True)):
+                    continue
+                completed = {**deepcopy(result), "source_step": original["step"],
+                             "source_episode": original["episode"], "current_observation": True,
+                             "agrees": result.get("action") == original.get("action")}
+                completed["grade"] = grade.grade(result.get("answers"), original.get("truth"),
+                                                 original["request"]["questions"]) if result.get("status") == "ok" else None
+                original["shadow"][index] = completed
+                if capture and self.game is not None:
+                    self._capture_failure(self.game, original)
+                del self.completed_shadows[call_id]
+                break
 
     def _observed_locked(self, observed):
         self.observed, self.observed_at = observed, time.time()
@@ -801,6 +812,7 @@ class Lab:
                 row["preparation_ms"] = round(sum(p["preparation_ms"] or 0 for p in row["preparations"]), 1)
                 row["game_build"] = deepcopy(self.info.get("game_build"))
                 self.rows.insert(0, row)
+                self._reconcile_shadows_locked(row, capture=False)
                 self._capture_failure(game, row)
                 self.input_trace = row.get("input_trace")
                 if self.record and apply:

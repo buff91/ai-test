@@ -103,6 +103,9 @@ const posts = endpoint => requests.filter(request => request.url === `/api/train
   await panel.refresh(true);
   assert.equal(node('approve').disabled, true);
   assert.equal(node('exclude').disabled, false);
+  const previousReviews = posts('review').length;
+  await trigger('approve');
+  assert.equal(posts('review').length, previousReviews);
   assert.match(node('case-note').textContent, /승인 불가/);
   delete backend.dataset.cases[0].compatible;
 
@@ -171,6 +174,14 @@ const posts = endpoint => requests.filter(request => request.url === `/api/train
   getHandler = null;
   await panel.refresh(true);
   assert.equal(checkpointButton('candidate-1', 'apply').disabled, false);
+
+  // An unexpected server identity is an error, never a zero-count success.
+  getHandler = async () => ({...clone(backend), game: 'foreign-game'});
+  await panel.refresh(true);
+  assert.match(node('status').textContent, /서버 응답의 게임·버전/);
+  assert.equal(checkpointButton('candidate-1', 'apply').disabled, true);
+  getHandler = null;
+  await panel.refresh(true);
 
   // Switching versions while a GET is in flight clears prior counts and discards its response.
   let finishOld;
