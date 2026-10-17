@@ -1,0 +1,42 @@
+.laya-training { grid-column: 1 / -1; min-width: 0; margin: 10px 0 0; padding: 24px; border: 1px solid #4a715b; border-radius: 9px; background: var(--panel); scroll-margin-top: 20px; }
+.training-heading, .training-checkpoint-title { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.training-heading h2 { font-size: 25px; }
+.training-scope { margin: 15px 0 5px; color: #b9d2c3; font-size: 13px; line-height: 1.8; }
+.training-counts { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; margin: 18px 0; }
+.training-counts > div { min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 5px; background: #0f1922; }
+.training-counts small { display: block; font-size: 12px; color: var(--muted); }
+.training-counts strong { display: block; margin-top: 5px; font: 700 24px ui-monospace, monospace; color: #d5eee0; }
+.training-columns { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 26px; }
+.training-workflow, .training-results { min-width: 0; }
+.training-step { margin: 0; padding: 18px 0; border-top: 1px solid var(--line); }
+.training-step h3 { margin: 0; font-size: 16px; color: #daeee1; }
+.training-step > label, .training-bookmark > label, .training-label-fields label, .training-options label { display: block; margin: 14px 0 6px; font-size: 12px; color: #c6d9cf; }
+.training-actions { flex-wrap: wrap; margin: 14px 0; gap: 8px; }
+.training-actions button { padding: 9px 12px; border-radius: 5px; }
+.training-bookmark { margin: 12px 0 16px; padding: 0 12px 12px; border: 1px solid var(--line); border-radius: 5px; }
+.training-bookmark button { width: 100%; margin-top: 8px; border: 1px solid #385365; border-radius: 5px; padding: 9px; font-size: 12px; }
+.training-case-grid, .training-label-fields, .training-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; }
+.training-case-grid { margin-top: 12px; }
+.training-case-grid > details, .training-label-fields > div, .training-options > div { min-width: 0; }
+.training-pre { max-height: 210px; margin: 8px 0 12px; padding: 10px; border: 1px solid #354755; border-radius: 5px; background: #0b151e; color: #c6d8df; font: 12px/1.8 ui-monospace, monospace; overflow: auto; overflow-wrap: anywhere; white-space: pre-wrap; }
+.training-step textarea { display: block; width: 100%; min-height: 90px; resize: vertical; padding: 10px; background: #0b151e; border: 1px solid #536573; border-radius: 5px; color: var(--text); font: 12px/1.7 ui-monospace, monospace; }
+.training-step textarea:focus { outline: 2px solid #a7e6ca55; outline-offset: 1px; border-color: var(--cyan); }
+.training-step .field-note { font-size: 12px; }
+.training-freeze { margin-top: 14px; white-space: normal; }
+.training-empty { margin: 12px 0; padding: 14px; border: 1px dashed #415a4c; border-radius: 5px; color: var(--muted); font-size: 12px; line-height: 1.8; }
+.training-active { margin-top: 14px; padding: 12px; border: 1px solid #527760; border-radius: 5px; background: #1c3025; color: #d1eedb; font-size: 13px; overflow-wrap: anywhere; }
+.training-checkpoint { margin-top: 14px; border: 1px solid #3e5749; border-radius: 6px; background: #101b23; padding: 14px; }
+.training-checkpoint-title { font-size: 12px; overflow-wrap: anywhere; }
+.training-checkpoint-title b { min-width: 0; }
+.training-checkpoint-title span { flex: none; }
+.training-table-wrap { max-width: 100%; overflow: auto; }
+.training-metrics { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12px; }
+.training-metrics th, .training-metrics td { padding: 8px 5px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; font-weight: 400; }
+.training-metrics th:first-child { text-align: left; color: var(--muted); white-space: normal; }
+.training-metrics thead th { color: #c9e4d4; }
+.training-warning { padding: 10px; border: 1px solid #7c603a; border-radius: 5px; background: #342a1c; color: var(--orange); font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.training-job { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 5px; }
+.training-job > div { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
+.training-job details { margin-top: 10px; }
+@media (max-width: 1100px) { .training-columns { grid-template-columns: 1fr; gap: 0; } }
+@media (max-width: 600px) { .laya-training { padding: 16px; } .training-heading { flex-wrap: wrap; } .training-counts { grid-template-columns: repeat(3, minmax(0, 1fr)); } .training-counts > div { padding: 10px; } .training-counts small { font-size: 11px; } .training-case-grid, .training-label-fields, .training-options { grid-template-columns: 1fr; } .training-checkpoint { padding: 11px; } .training-checkpoint-title { flex-wrap: wrap; } .training-actions button { flex: 1 1 auto; } }

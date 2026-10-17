@@ -6,7 +6,6 @@ Keyboard, mouse buttons and the socket hook all invoke the same action handler.
 """
 from __future__ import annotations
 import argparse
-import math
 import os
 import sys
 import threading
@@ -15,8 +14,7 @@ from pathlib import Path
 
 from gamelab.protocol import GameServer
 from sims import SIMS
-from sims.base import truth
-from sims.service import SimService
+from sims.service import RealtimeService
 from gamelab import screens, presentation
 from kbm.keys import KEYCODES
 
@@ -59,108 +57,10 @@ def input_key(event):
     return _MAC_CONTROL_KEYS.get(physical, key)
 
 
-class DesktopService(SimService):
-    """Small game host shared by real manual input and mod-style socket clients."""
-    def __init__(self, game, scenario=None, tick_ms=3000):
-        if not isinstance(tick_ms, (int, float)) or not math.isfinite(tick_ms) or not 100 <= tick_ms <= 10000:
-            raise ValueError("tick_ms must be between 100 and 10000.")
-        super().__init__(SIMS[game], scenario)
-        self.game_id = game
-        self.continuous = game != "party"
-        self.tick_seconds = tick_ms / 1000
-        self.paused = self.continuous
-        self.ready = True
-        self.elapsed = 0.0
-        self.accumulator = 0.0
-        self.input_used = False
-        self.last_action = "none"
-
-    def render_state(self):
-        with self.lock:
-            return {"snapshot": {**self.sim.snapshot(), "paused": self.paused,
-                                  "elapsed": round(self.elapsed, 2), "last_action": self.last_action,
-                                  "input_ready": not self.input_used, "tick_ms": round(self.tick_seconds * 1000)},
-                    "events": list(self.events), "revision": self.revision, "episode": self.episode,
-                    "done": self.sim.outcome != "playing"}
-
-    def _state(self):
-        state = self.render_state()
-        if self._truth is None or self._truth[0] != self.revision:
-            self._truth = (self.revision, truth(self.sim))
-        # Full discrete search is a teaching reference; realtime inputs can arrive at any phase.
-        return {**state, "truth": self._truth[1], "reference_kind": "next_beat_search",
-                "description": self.sim.describe() + (" The world runs independently every %.0f ms; at most one input per beat. " % (self.tick_seconds * 1000) if self.continuous else " The battle waits for each input. ") +
-                "Paused: %s. Input ready: %s." % (self.paused, not self.input_used)}
-
-    def advance(self, dt):
-        with self.lock:
-            if not self.continuous or self.paused or self.sim.outcome != "playing": return []
-            if not isinstance(dt, (int, float)) or not math.isfinite(dt) or dt < 0:
-                raise ValueError("dt must be finite and nonnegative")
-            self.elapsed += dt
-            self.accumulator += dt
-            events = []
-            while self.accumulator >= self.tick_seconds and self.sim.outcome == "playing":
-                self.accumulator -= self.tick_seconds
-                events += self.sim.world_step()
-                self.input_used = False
-                self.revision += 1
-            if events: self.events = events[-5:]
-            return events
-
-    def handle(self, request):
-        with self.lock:
-            op = request.get("op")
-            if op == "info":
-                return {"ok": True, "actions": list(self.sim.ACTIONS), "scenarios": list(self.sim.SCENARIOS),
-                        "timing": "realtime" if self.continuous else "turn", "continuous": self.continuous,
-                        "supports_pause": self.continuous, "tick_ms": self.tick_seconds * 1000,
-                        "build": {"game": self.game_id, "version": "desktop-v1"}}
-            if op in ("pause", "resume", "halt"):
-                self.paused = self.continuous and op != "resume"
-                self.ready = False
-                self.revision += 1
-                return {"ok": True, **self._state()}
-            if op == "reset":
-                names = list(self.sim.SCENARIOS)
-                scenario = request.get("scenario") or names[(names.index(self.sim.scenario) + 1) % len(names)]
-                if scenario not in self.sim.SCENARIOS:
-                    return {"ok": False, "error": "Unknown scenario: %s" % scenario, **self._state()}
-                self.sim = self.sim_cls.start(scenario)
-                self.paused, self.ready = self.continuous, True
-                self.input_used = False
-                self.elapsed = self.accumulator = 0.0
-                self.episode += 1; self.revision += 1
-                self.events = ["New scenario: " + scenario]; self.last_action = "none"
-                return {"ok": True, **self._state()}
-            if op == "step":
-                if request.get("action") not in self.sim.ACTIONS:
-                    return {"ok": False, "error": "Unknown action.", **self._state()}
-                expected = request.get("expected_revision")
-                if expected is not None and expected != self.revision:
-                    return {"ok": False, "stale": True, "error": "Game state changed while the model decided.", **self._state()}
-                observed_at, limit = request.get("observed_at"), request.get("max_age_ms")
-                if observed_at is not None and limit is not None:
-                    if not all(isinstance(x, (int, float)) and math.isfinite(x) for x in (observed_at, limit)) or limit < 0:
-                        return {"ok": False, "error": "Invalid observation age budget.", **self._state()}
-                    if (time.time() - observed_at) * 1000 > limit:
-                        return {"ok": False, "stale": True, "error": "Decision exceeded its age budget.", **self._state()}
-                if self.sim.outcome != "playing":
-                    return {"ok": False, "error": "Game ended. Reset for another scenario.", **self._state()}
-                if self.continuous and self.paused and not self.ready:
-                    return {"ok": False, "error": "Game paused. Resume before applying input.", **self._state()}
-                if self.continuous and self.input_used:
-                    return {"ok": False, "busy": True, "error": "One input per beat; waiting for the next world tick.", **self._state()}
-                before = self.sim.snapshot()
-                action = request["action"]
-                self.events = self.sim.apply(action) if self.continuous else self.sim.step(action)
-                self.last_action = action
-                if self.continuous:
-                    self.paused, self.ready, self.input_used = False, False, True
-                self.revision += 1
-                return {"ok": True, "before": before, **self._state()}
-            if op == "state": return {"ok": True, **self._state()}
-            return {"ok": False, "error": "Unknown operation: %s" % op, **self._state()}
+class DesktopService(RealtimeService):
+    """Visible host using the same live simulation clock as the socket runtime."""
+    def __init__(self, game, scenario=None, tick_ms=1000):
+        super().__init__(SIMS[game], scenario, tick_ms=tick_ms, version="desktop-v1")
 
 
 class GameWindow:
@@ -208,11 +108,10 @@ class GameWindow:
         self.box(x, y+14, w * max(0, min(1, value/maximum)), 13, color)
 
     def submit(self, request):
-        response = self.service.handle(request)
+        # Local controls must not run the model's reference search on Tk's clock.
+        response = self.service.handle({**request, "include_truth": False})
         if not response.get("ok"):
-            if response.get("busy"):
-                message = "이번 박자에 이미 입력했습니다. 다음 박자에 다시 조작하세요."
-            elif self.service.sim.outcome != "playing":
+            if self.service.sim.outcome != "playing":
                 message = "게임이 끝났습니다. N 키로 다음 시나리오를 시작하세요."
             elif self.service.paused:
                 message = "일시정지 상태입니다. P 키로 재개하세요."
@@ -262,9 +161,7 @@ class GameWindow:
         previous = getattr(self, "previous_snapshot", None)
         # Both local input and socket input receive the same visible feedback.
         if previous and data["revision"] != getattr(self, "previous_revision", None):
-            applied = s["last_action"] != "none" and (
-                not self.service.continuous or s["last_action"] != previous["last_action"] or
-                (previous["input_ready"] and not s["input_ready"]))
+            applied = s.get("input_sequence", 0) != previous.get("input_sequence", 0)
             if applied: self.effect_started = now
         self.previous_snapshot, self.previous_revision = dict(s), data["revision"]
         self.effect_age = max(0, now-getattr(self, "effect_started", 0))
@@ -274,16 +171,14 @@ class GameWindow:
         if s["outcome"] != "playing":
             status = {"won": "목표 달성", "lost": "도전 실패", "draw": "시간 종료"}[s["outcome"]]
         elif game == "party": status = "행동 선택 중 · 시간 정지"
-        elif s["paused"]: status = "일시정지 · P 키로 시작"
-        else: status = "진행 중 · 독립 게임 시계"
+        elif s["paused"]: status = "일시정지 · P 키로 재개"
+        else: status = "실시간 진행 중"
         self.text(1075, 28, status, 13, AMBER if s["paused"] else GREEN, anchor="e", bold=True)
         scenario = presentation.SCENARIOS.get(s["scenario"], s["scenario"])
-        self.text(1075, 62, f"{scenario}  ·  {'턴' if game == 'party' else '박자'} {s['turn']}", 12, MUTED, anchor="e")
+        clock = f"턴 {s['turn']}" if game == "party" else f"{s['elapsed']:.1f}초"
+        self.text(1075, 62, f"{scenario}  ·  {clock}", 12, MUTED, anchor="e")
         self.text(24, 63, "키보드 또는 아래 버튼으로 플레이하세요", 12, MUTED)
         getattr(presentation, "draw_" + game)(self, s)
-        if self.service.continuous:
-            progress = min(1, self.service.accumulator/self.service.tick_seconds)
-            self.box(20, 425, 1060*progress, 3, CYAN)
         actions = list(KEYS[game].items())
         actions += [("N", "__reset")] + ([("P", "__pause")] if self.service.continuous else [])
         width = 1050/len(actions)
@@ -292,20 +187,22 @@ class GameWindow:
             selected = action == s["last_action"] and self.effect_active
             hover = action == getattr(self, "hover_action", None)
             control = action.startswith("__")
-            waiting = self.service.continuous and not s["input_ready"] and not control
             fill = "#285363" if selected else "#2b4058" if hover else "#1c2c40" if control else "#23354e"
             self.box(x, y, width-6, 48, fill, CYAN if selected or hover else "#354b66")
             label = presentation.ACTION_LABELS[action]
-            if action == "__pause" and s["paused"]: label = "시작 / 재개"
+            if action == "__pause" and s["paused"]: label = "재개"
+            if game == "moba" and action in ("attack", "skill", "recall"):
+                cooldown = s.get(action + "_cooldown_seconds", 0)
+                if cooldown > 0: label += f" {cooldown:.1f}초"
             self.text(x+(width-6)/2, y+13, presentation.KEY_LABELS.get(key, key.upper()), 10, CYAN, "center", True)
-            self.text(x+(width-6)/2, y+33, label, 10, MUTED if waiting else TEXT, "center")
+            self.text(x+(width-6)/2, y+33, label, 10, TEXT, "center")
             self.buttons.append((x, y, width-6, 48, action))
         notice = getattr(self, "input_notice", "") if now < getattr(self, "notice_until", 0) else ""
         if not notice:
             notice = "1회 입력 = 1턴" if game == "party" else (
-                "첫 행동을 선택하면 시작 · 박자당 1회 입력" if s["paused"] and self.service.ready else
                 "일시정지 · P 키로 재개" if s["paused"] else
-                "입력 가능 · 박자당 1회 입력" if s["input_ready"] else "입력 적용 완료 · 다음 박자를 기다리는 중")
+                "방향키로 속도와 차선 조작 · 입력 없이도 계속 주행합니다" if game == "racer" else
+                "W / S 이동 · E 정지 · Space 공격 · Q 스킬 · 전투는 계속 진행됩니다")
         self.text(26, 503, notice, 10, AMBER if getattr(self, "input_notice", "") and now < getattr(self, "notice_until", 0) else MUTED)
         for x in (24, 1076): self.box(x-3, 517, 6, 6, AMBER)
         self.text(40, 520, "화면 관측 계기 · 키마 제어는 아래 화면 픽셀에서 상태를 읽습니다", 10, MUTED)
@@ -330,6 +227,8 @@ class GameWindow:
         import re
         fixed = {"Recalled to base: +30 HP.": "기지로 귀환했습니다. 체력 +30",
                  "Skill is cooling down.": "스킬을 다시 사용할 수 있을 때까지 기다리세요.",
+                 "Attack is cooling down.": "다음 공격을 준비하고 있습니다.",
+                 "Recall is cooling down.": "귀환을 다시 사용할 수 있을 때까지 기다리세요.",
                  "Hit the enemy core.": "적 코어를 공격했습니다.",
                  "No target in range.": "공격 범위에 대상이 없습니다.",
                  "New minion waves spawned in all three lanes.": "모든 전선에 새 미니언이 등장했습니다."}
@@ -366,7 +265,7 @@ def main():
     parser.add_argument("--game", choices=tuple(SIMS), required=True)
     parser.add_argument("--socket")
     parser.add_argument("--scenario")
-    parser.add_argument("--tick-ms", type=int, default=3000, help="Realtime world beat, independent of model latency (100-10000).")
+    parser.add_argument("--tick-ms", type=int, default=1000, help="World time scale in milliseconds, independent of input/model latency (100-10000).")
     args = parser.parse_args()
     GameWindow(DesktopService(args.game, args.scenario, args.tick_ms), args.socket).run()
 

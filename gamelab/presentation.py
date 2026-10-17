@@ -24,7 +24,7 @@ ACTION_LABELS = {
     "attack": "공격", "aoe_skill": "빛의 파동", "heal": "치유", "guard": "방어", "use_item": "부활 깃털",
     "accelerate": "가속", "brake": "감속", "steer_left": "왼쪽 차선", "steer_right": "오른쪽 차선",
     "boost": "부스트", "keep": "유지", "advance": "전진", "retreat": "후퇴", "skill": "회전 베기",
-    "recall": "귀환 · 회복", "lane_left": "상단 이동", "lane_right": "하단 이동", "wait": "대기",
+    "recall": "귀환 · 회복", "lane_left": "상단 이동", "lane_right": "하단 이동", "wait": "이동 정지",
     "__reset": "다음 시나리오", "__pause": "일시정지", "none": "입력 대기",
 }
 KEY_LABELS = {"up": "↑", "down": "↓", "left": "←", "right": "→", "space": "SPACE"}
@@ -191,6 +191,7 @@ def car(w, x, y, scale=1, color=CYAN):
 
 
 def draw_racer(w, s):
+    position = s.get("realtime_position", s["position"])
     w.box(20, 88, 1060, 340, "#15323d")
     w.box(280, 88, 800, 85, "#23495c")
     oval(w, 843, 121, 22, 22, "#edc492")
@@ -208,14 +209,14 @@ def draw_racer(w, s):
             x2,y2,_ = road_point(lane,d+1.3)
             line(w,[x1,y1,x2,y2], "#a5afb2", max(1,3-d/7))
     for corner in s["corners"]:
-        start, end = corner["from"]-s["position"], corner["to"]-s["position"]
+        start, end = corner["from"]-position, corner["to"]-position
         if end >= 0 and start <= 12:
             _,y1,wd1 = road_point(1,max(0,start))
             _,y2,wd2 = road_point(1,min(13,end+1))
             polygon(w,[625-wd1/2,y1,625+wd1/2,y1,625+wd2/2,y2,625-wd2/2,y2], "#615039", AMBER)
             w.text(625, (y1+y2)/2, f"코너 · 속도 {corner['max_speed']} 이하", 10, "#ffe6bd", "center", True)
     for obstacle in s["obstacles"]:
-        distance = obstacle["cell"]-s["position"]
+        distance = obstacle["cell"]-position
         if 0 <= distance <= 12:
             lane = ("left","center","right").index(obstacle["lane"])
             x,y,wd = road_point(lane,distance)
@@ -223,7 +224,7 @@ def draw_racer(w, s):
             polygon(w,[x-26*size,y,x+26*size,y,x+20*size,y-23*size,x-20*size,y-23*size], "#bc5d45", AMBER, 2)
             line(w,[x-17*size,y-19*size,x-6*size,y-3*size], "#ffe6bd", 4*size)
             line(w,[x+2*size,y-19*size,x+13*size,y-3*size], "#ffe6bd", 4*size)
-            w.text(x,y-34*size,f"{distance}칸",10,AMBER,"center")
+            w.text(x,y-34*size,f"{distance:.1f}칸",10,AMBER,"center")
     lane = ("left","center","right").index(s["lane"])
     x,_,_ = road_point(lane,1.4)
     if not s["paused"] and s["outcome"] == "playing":
@@ -244,26 +245,26 @@ def draw_racer(w, s):
         a = math.radians(150+i*60)
         line(w,[147+math.cos(a)*54,236+math.sin(a)*54,147+math.cos(a)*59,236+math.sin(a)*59], AMBER if i < s["speed"] else MUTED, 3)
     w.text(147, 225, str(s["speed"]), 43, AMBER, "center", True)
-    w.text(147, 269, "칸 / 박자", 11, MUTED, "center")
+    w.text(147, 269, "속도 단계", 11, MUTED, "center")
     w.text(42, 324, "차체 상태", 11, MUTED)
     for i in range(3):
         w.box(143+i*36, 316, 28, 16, GREEN if i < s["integrity"] else "#2d3a49")
     w.text(42, 362, "부스트", 11, MUTED)
     w.text(252, 362, f"{s['boost']}회", 16, CYAN, "e", True)
-    stat(w,42,393,210,"주행 거리",min(40,s["position"]),40,CYAN)
+    stat(w,42,393,210,"주행 거리",round(min(40,position), 1),40,CYAN)
     w.box(891, 202, 169, 199, "#142634", "#35505b")
     w.text(907,224,"전방 안내",12,TEXT,bold=True)
-    upcoming = [c for c in s["corners"] if c["to"] >= s["position"] and c["from"]-s["position"] <= 12]
+    upcoming = [c for c in s["corners"] if c["to"] >= position and c["from"]-position <= 12]
     if upcoming:
         c = upcoming[0]
         w.text(907,255,"급커브",17,AMBER,bold=True)
         w.text(907,284,f"속도 {c['max_speed']} 이하",12,TEXT)
-        w.text(907,311,f"{max(0,c['from']-s['position'])}칸 앞 · 감속 준비",11,MUTED)
+        w.text(907,311,f"{max(0,c['from']-position):.1f}칸 앞 · 감속 준비",11,MUTED)
     else:
         w.text(907,255,"직선 구간",17,GREEN,bold=True)
         w.text(907,284,"차선을 확인하세요",11,TEXT)
     w.text(907,350,"완주까지",10,MUTED)
-    w.text(1042,376,f"{max(0,40-s['position'])}칸",24,TEXT,"e",True)
+    w.text(1042,376,f"{max(0,40-position):.1f}칸",24,TEXT,"e",True)
 
 
 def tower(w, x, y, hp, color):
@@ -287,6 +288,8 @@ def minions(w, x, y, count, color, direction):
 
 
 def draw_moba(w, s):
+    position = s.get("realtime_position", s["position"])
+    cooldown = s.get("skill_cooldown_seconds", s["skill_cooldown"] * s.get("tick_ms", 1000) / 1000)
     w.box(20,88,1060,340,"#1b3832")
     polygon(w,[585,88,633,88,805,428,750,428],"#245466")
     for x,y in ((322,122),(401,113),(566,122),(774,111),(941,116),(1025,128),(349,222),(508,222),(885,219),(1017,218),(330,420),(471,419),(594,420),(896,419),(1028,418)):
@@ -309,7 +312,7 @@ def draw_moba(w, s):
         minions(w,front+24,y+1,s["enemy_minions"][i],RED,1)
         w.text(front,y+38,f"아군 {s['allied_minions'][i]}  :  적 {s['enemy_minions'][i]}",9,MUTED,"center")
         if i == hero_lane:
-            hx = 350+s["position"]*106
+            hx = 350+position*106
             warrior(w,hx,y+13,CYAN,.52,s["hero_hp"] > 0,True)
             meter(w,hx-20,y-36,40,s["hero_hp"],100,CYAN)
             if s["position"] >= 5 and s["enemy_towers"][i] and not s["allied_minions"][i]:
@@ -326,9 +329,9 @@ def draw_moba(w, s):
     w.text(42,143,"적 포탑을 밀고 코어를 파괴하세요",10,MUTED)
     stat(w,42,181,210,"영웅 체력",s["hero_hp"],100,CYAN)
     w.text(42,226,"현재 전선",11,MUTED)
-    w.text(252,226,f"{lane_names[hero_lane]} · 위치 {s['position']}",12,TEXT,"e",True)
+    w.text(252,226,f"{lane_names[hero_lane]} · 위치 {position:.1f}",12,TEXT,"e",True)
     w.text(42,263,"회전 베기",11,MUTED)
-    w.text(252,263,"준비 완료" if not s["skill_cooldown"] else f"{s['skill_cooldown']}박자 후",12,GREEN if not s["skill_cooldown"] else AMBER,"e",True)
+    w.text(252,263,"준비 완료" if not cooldown else f"{cooldown:.1f}초 후",12,GREEN if not cooldown else AMBER,"e",True)
     w.text(42,298,"골드",11,MUTED)
     w.text(252,298,str(s["gold"]),14,AMBER,"e",True)
     stat(w,42,340,210,"아군 코어",s["allied_core"],100,GREEN)

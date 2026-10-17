@@ -19,5 +19,6 @@
     "steer_right": "steer_right",
     "boost": "boost",
     "keep": "keep"
-  }
+  },
+  "continuous": true
 }

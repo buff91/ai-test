@@ -19,6 +19,27 @@ from gamelab.policy import Policy
 RESULTS = ROOT / "results" / "games"
 
 
+class ShadowTracker:
+    """Keep at most one inference in flight per comparison model.
+
+    A slow comparison keeps its original observation. It never queues another
+    copy for each fast control tick, or grades an old answer against a new frame.
+    Traced deciders publish the eventual answer in the console's call history.
+    """
+
+    def __init__(self):
+        self.pending = {}
+
+    def submit(self, pool, decider, state, step, episode):
+        previous = self.pending.get(decider.provider)
+        if previous is not None and not previous["future"].done():
+            return {**previous, "current_observation": False}
+        item = {"future": pool.submit(_decide, decider, state, step, episode),
+                "source_step": step, "source_episode": episode, "current_observation": True}
+        self.pending[decider.provider] = item
+        return item
+
+
 def play(client, decider, config, steps=0, pause=False, record=True, save_frames=False, log=print,
          shadows=(), shadow_wait_ms=None, questions=None, policy=None, episodes=0):
     """Observe -> decide -> (policy) -> act, one tick() at a time, until steps or episodes run out.
@@ -30,6 +51,7 @@ def play(client, decider, config, steps=0, pause=False, record=True, save_frames
     info = client.request("info") if record else {}
     session = new_session(info["game"], {key: info.get(key) for key in ("target", "runtime", "game_build", "version_check")}) if record else None
     interval = config["interval_ms"] / 1000
+    shadow_tracker = ShadowTracker() if config.get("continuous") else None
     count, episode, rows, outcomes = 0, 0, [], []
     try:
         while not steps or count < steps:
@@ -37,7 +59,7 @@ def play(client, decider, config, steps=0, pause=False, record=True, save_frames
             frame_path = str(session / ("%04d.png" % (count + 1))) if record and save_frames else None
             result = tick(client, decider, config, pause=pause, shadows=shadows, shadow_wait_ms=shadow_wait_ms,
                           questions=questions, policy=policy, pool=pool, frame_path=frame_path,
-                          step=count + 1, episode=episode)
+                          step=count + 1, episode=episode, shadow_tracker=shadow_tracker)
             if result["kind"] == "error":
                 log("! observe: %s" % result["error"])
                 time.sleep(interval)
@@ -77,7 +99,8 @@ def play(client, decider, config, steps=0, pause=False, record=True, save_frames
 
 
 def tick(client, decider, config, pause=False, shadows=(), shadow_wait_ms=None, questions=None, policy=None,
-         pool=None, frame_path=None, step=0, episode=0, apply=True, decision_delay_ms=0, cancel_event=None):
+         pool=None, frame_path=None, step=0, episode=0, apply=True, decision_delay_ms=0, cancel_event=None,
+         shadow_tracker=None):
     """One observe -> decide -> (policy) -> act. A late answer is dropped instead of acting on an old screen.
 
     Shadow deciders judge the same observation in parallel and are only recorded.
@@ -108,7 +131,10 @@ def tick(client, decider, config, pause=False, shadows=(), shadow_wait_ms=None, 
             paused_for_decision = resume_pending = bool(paused.get("ok"))
         state = observed["description"] or observed["state"]
         truth = observed.get("truth")
-        pending = {d.provider: pool.submit(_decide, d, state, step, episode) for d in shadows}
+        tracked = bool(shadow_tracker is not None and apply)
+        pending = {d.provider: shadow_tracker.submit(pool, d, state, step, episode) if tracked else
+                   {"future": pool.submit(_decide, d, state, step, episode), "current_observation": True}
+                   for d in shadows}
         decision = _decide(decider, state, step, episode)
         final, fired = policy.apply(decision, state)
         # Teaching control: deliberately defer input, without counting it as model latency.
@@ -136,10 +162,16 @@ def tick(client, decider, config, pause=False, shadows=(), shadow_wait_ms=None, 
                 "max_age_ms": config["max_age_ms"]}
             result = client.request("act", action=final["action"], **freshness)
         budget = None if not apply or shadow_wait_ms is None else max(0, shadow_wait_ms / 1000 - (time.time() - tick_started))
-        wait(pending.values(), timeout=budget)
-        shadow = [{**future.result(), "agrees": future.result().get("action") == final.get("action")}
-                  if future.done() else {"provider": name, "status": "timeout"}
-                  for name, future in pending.items()]
+        wait([item["future"] for item in pending.values()], timeout=0 if tracked else budget)
+        shadow = []
+        for name, item in pending.items():
+            future = item["future"]
+            source = {key: item[key] for key in ("source_step", "source_episode", "current_observation") if key in item}
+            if item["current_observation"] and future.done():
+                answer = future.result()
+                shadow.append({**answer, **source, "agrees": answer.get("action") == final.get("action")})
+            else:
+                shadow.append({"provider": name, "status": "running" if tracked else "timeout", **source})
         if not apply:
             cancelled = cancel_event is not None and cancel_event.is_set()
     finally:
@@ -153,7 +185,7 @@ def tick(client, decider, config, pause=False, shadows=(), shadow_wait_ms=None, 
             pool.shutdown(wait=False, cancel_futures=True)
     graded = _grade(decision, truth, questions)
     for row in shadow:
-        row["grade"] = _grade(row, truth, questions)
+        row["grade"] = _grade(row, truth, questions) if row.get("current_observation", True) else None
     row = {"step": step, "episode": episode, "target": config.get("_target"), "frame": frame_path if observed.get("frame_saved") else None,
            "state": observed["state"], "description": observed["description"], "truth": truth,
            "request": {"state": state, "questions": questions or {}},

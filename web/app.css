@@ -430,3 +430,63 @@ footer span { padding: 0; margin-right: 12px; color: var(--cyan); }
 .input-trace-columns h3 { font-size: 12px; font-weight: 500; margin: 13px 0 6px; color: var(--muted); }
 .input-trace-columns pre { margin: 0; max-height: 250px; overflow: auto; border: 1px solid var(--line); border-radius: 5px; background: #0f1821; padding: 10px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.6 ui-monospace, monospace; }
 @media (max-width: 760px) { .input-trace-columns { grid-template-columns: 1fr; } }
+
+/* A live request stays visible beside the game, separate from historical records. */
+.live-decisions { border: 1px solid #719b83; border-radius: 9px; background: #16261f; padding: 18px; margin-bottom: 18px !important; }
+.live-decision-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.live-decision-heading h2 { margin-top: 4px; font-size: 23px; }
+.live-world-status { flex: none; font-size: 11px; border: 1px solid #526e5f; border-radius: 20px; padding: 4px 8px; color: #d2e2d8; }
+.live-world-status.running { color: #b7efcc; background: #254733; }
+.live-demo-actions { flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.live-demo-actions > button { flex: 1; min-width: 180px; }
+.live-demo-actions .check { font-size: 12px; }
+.live-provider-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 15px; }
+.live-provider-card { min-width: 0; border: 1px solid #456050; border-radius: 7px; background: #111e19; padding: 12px; }
+.live-provider-card.thinking { border-color: #efc38c; background: #292719; }
+.live-provider-card.failed { border-color: #b67275; }
+.live-provider-card.inactive { opacity: .66; }
+.live-provider-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px 9px; }
+.live-provider-title b { font-size: 17px; }
+.live-provider-title span { color: var(--muted); font-size: 11px; }
+.live-provider-status { color: var(--cyan); font-size: 12px; margin-top: 5px; min-height: 20px; }
+.thinking .live-provider-status { color: var(--orange); }
+.live-provider-card dl { margin: 10px 0 7px; }
+.live-provider-card dl > div { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-top: 5px; }
+.live-provider-card dt { color: var(--muted); font-size: 11px; flex: none; }
+.live-provider-card dd { margin: 0; text-align: right; font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
+.live-provider-card p, .live-decision-legend { font-size: 11px; color: var(--muted); line-height: 1.5; margin: 8px 0 0; }
+.live-provider-card p.warn { color: var(--orange); }
+.live-decision-legend { margin-top: 12px; }
+@media (max-width: 760px) {
+  .live-decisions { padding: 16px; }
+  .live-decision-heading { flex-wrap: wrap; }
+  .live-provider-cards { grid-template-columns: 1fr; }
+}
+
+/* Keep live game telemetry and live model replies together on laptop screens. */
+@media (min-width: 1180px) {
+  .app-shell.realtime-model-view { max-width: 1840px; padding: 0 20px; }
+  .realtime-model-view .workspace { grid-template-columns: 240px minmax(300px, 1fr) minmax(340px, 1.05fr); gap: 14px; }
+  .realtime-model-view .setup-rail { grid-column: 1; grid-row: 1; }
+  .realtime-model-view .game-column { grid-column: 2; grid-row: 1; }
+  .realtime-model-view .trace-column { grid-column: 3; grid-row: 1; }
+  .realtime-model-view .setup-card { padding: 15px; }
+}
+.demonstration-running > .intro,
+.demonstration-running > .play-modes,
+.demonstration-running > .learning-map,
+.demonstration-running > .mode-tools { display: none; }
+.demonstration-running .workspace { padding-top: 16px; }
+.demonstration-running .live-provider-card.inactive { display: none; }
+@media (min-width: 640px) and (max-width: 1179px) {
+  .demonstration-running .workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+  .demonstration-running .setup-rail { display: none; }
+  .demonstration-running .game-column { grid-column: 1; grid-row: 1; }
+  .demonstration-running .trace-column { grid-column: 2; grid-row: 1; }
+  .demonstration-running .foreground-note { display: none; }
+  .demonstration-running .live-decisions { padding: 12px; }
+  .demonstration-running .live-provider-cards { grid-template-columns: 1fr; }
+}
+@media (max-width: 639px) {
+  .demonstration-running .setup-rail { display: none; }
+}

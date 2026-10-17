@@ -1,6 +1,7 @@
 """macOS window lookup, screen capture, and CGEvent input. Quartz is imported lazily."""
 
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -34,6 +35,14 @@ class MacPlatform:
         self.title_contains = title_contains
         self.pid = pid
 
+    def _matches_owner(self, owner):
+        # Source games may be launched by python, python3, or python3.x.
+        # Keep this alias limited to the generic Python profile; PID and
+        # title checks still bind it to the selected game instance.
+        if self.owner.casefold() == "python":
+            return isinstance(owner, str) and re.fullmatch(r"python(?:\d+(?:\.\d+)*)?", owner, re.IGNORECASE) is not None
+        return owner == self.owner
+
     def _windows(self):
         Q = _quartz()
         options = Q.kCGWindowListOptionOnScreenOnly | Q.kCGWindowListExcludeDesktopElements
@@ -44,7 +53,7 @@ class MacPlatform:
         """Largest on-screen window of the owner as {id, pid, x, y, width, height} in points."""
         matches = []
         for w in self._windows():
-            if w.get("kCGWindowOwnerName") != self.owner:
+            if not self._matches_owner(w.get("kCGWindowOwnerName")):
                 continue
             if self.pid is not None and w.get("kCGWindowOwnerPID") != self.pid:
                 continue
@@ -57,7 +66,7 @@ class MacPlatform:
         if not matches:
             Q = _quartz()
             hidden = [w for w in Q.CGWindowListCopyWindowInfo(Q.kCGWindowListOptionAll, Q.kCGNullWindowID) or []
-                      if w.get("kCGWindowOwnerName") == self.owner and w.get("kCGWindowLayer", 0) == 0
+                      if self._matches_owner(w.get("kCGWindowOwnerName")) and w.get("kCGWindowLayer", 0) == 0
                       and (self.pid is None or w.get("kCGWindowOwnerPID") == self.pid)
                       and w["kCGWindowBounds"]["Height"] > 100]
             if hidden:
@@ -88,7 +97,7 @@ class MacPlatform:
             windows = self._windows()
             candidates = []
             for candidate in windows:
-                if candidate.get("kCGWindowOwnerName") != self.owner:
+                if not self._matches_owner(candidate.get("kCGWindowOwnerName")):
                     continue
                 if self.pid is not None and candidate.get("kCGWindowOwnerPID") != self.pid:
                     continue

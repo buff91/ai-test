@@ -68,7 +68,7 @@ def agent_for(service, backend=None):
     return AgentService(game, platform, backend or WindowInput(window_for(service)))
 
 
-@patch("gamelab.desktop_game.truth", return_value={})
+@patch("sims.service.truth", return_value={})
 class DualRouteTests(unittest.TestCase):
     def test_every_scenario_and_action_matches_manual_keys_mouse_and_interface(self, _truth):
         for game_id, sim_cls in SIMS.items():
@@ -111,7 +111,7 @@ class DualRouteTests(unittest.TestCase):
                     self.assertEqual(service.render_state(), expected.render_state())
                     self.assertIsNone(agent.handle({"op": "observe"})["truth"])
 
-    def test_kbm_sent_input_does_not_claim_a_busy_game_accepted_it(self, _truth):
+    def test_kbm_second_input_is_dispatched_without_claiming_confirmation(self, _truth):
         service = DesktopService("moba")
         agent = agent_for(service)
         service.handle({"op": "step", "action": "attack"})
@@ -121,19 +121,20 @@ class DualRouteTests(unittest.TestCase):
         # Current HUD exposes no per-action acknowledgement. Dispatch evidence
         # must never be presented as a confirmed game transition.
         self.assertFalse(result["application_confirmed"])
-        self.assertEqual(service.render_state(), before)
-        if result.get("input_sent"):
-            self.assertTrue(result["command"]["events"])
-        else:
-            self.assertTrue(result.get("busy"), result)
+        self.assertTrue(result["input_sent"], result)
+        self.assertTrue(result["command"]["events"])
+        self.assertGreater(service.render_state()["snapshot"]["input_sequence"], before["snapshot"]["input_sequence"])
+        self.assertEqual(service.sim.turn, 1)
 
     def test_pause_and_resume_are_idempotent_for_both_realtime_games(self, _truth):
         for game_id in ("racer", "moba"):
             with self.subTest(game=game_id), patch("kbm.steps.sleep_ms"):
                 service = DesktopService(game_id)
                 agent = agent_for(service)
+                self.assertTrue(agent.handle({"op": "pause"})["application_confirmed"])
+                after_first_pause = list(agent.backend.events)
                 self.assertTrue(agent.handle({"op": "pause"})["ok"])
-                self.assertEqual(agent.backend.events, [])
+                self.assertEqual(agent.backend.events, after_first_pause)
                 self.assertTrue(agent.handle({"op": "resume"})["application_confirmed"])
                 after_resume = list(agent.backend.events)
                 self.assertTrue(agent.handle({"op": "resume"})["ok"])
@@ -159,7 +160,7 @@ class DualRouteTests(unittest.TestCase):
             dry_run = False
         agent = agent_for(DesktopService("racer"), IgnoredInput())
         with patch("kbm.steps.sleep_ms"), patch("kbm.agent.time.monotonic", side_effect=[0, 1]):
-            result = agent.handle({"op": "resume"})
+            result = agent.handle({"op": "pause"})
         self.assertFalse(result["ok"])
         self.assertTrue(result["input_sent"])
         self.assertFalse(result["application_confirmed"])
@@ -170,14 +171,14 @@ class DualRouteTests(unittest.TestCase):
         agent = agent_for(service, DryRunInput())
         with patch("kbm.steps.sleep_ms"):
             action = agent.handle({"op": "act", "action": "brake"})
-            resume = agent.handle({"op": "resume"})
+            pause = agent.handle({"op": "pause"})
         self.assertTrue(action["ok"])
         self.assertFalse(action["input_sent"])
         self.assertFalse(action["application_confirmed"])
         self.assertIsNone(action["command"])
-        self.assertFalse(resume["ok"])
-        self.assertFalse(resume["input_sent"])
-        self.assertTrue(service.paused)
+        self.assertFalse(pause["ok"])
+        self.assertFalse(pause["input_sent"])
+        self.assertFalse(service.paused)
 
     def test_visible_busy_indicator_rejects_input_before_dispatch(self, _truth):
         agent = agent_for(DesktopService("moba"))

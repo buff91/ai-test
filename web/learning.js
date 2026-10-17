@@ -216,12 +216,13 @@
     let gradeText = '이 기록의 기준 행동 일치 여부: 채점 정보 없음';
     if (graded && !graded.status && typeof graded.correct === 'boolean') gradeText = `이 기록의 기준 행동 일치 여부: ${graded.correct ? '일치' : '불일치'} · 기준 ${Array.isArray(graded.truth) ? graded.truth.join(', ') : graded.truth}`;
     return blocks.join('') + note('선택 확률은 선택지에 배분한 값, confidence는 분포 집중도, 기준 행동 일치율은 여러 기록을 채점한 결과입니다. 서로 다른 수치이며 높은 확률이 정답을 보장하지 않습니다. confidence 계산식은 런타임마다 다를 수 있습니다.', 'learning-muted') + note(gradeText) +
-      (row.reference_kind === 'instructional_rules' ? note('이 기준은 게임의 교육용 규칙입니다. 모델의 정답 보장이나 일반 성능 평가가 아닙니다.', 'learning-muted') : '');
+      (row.reference_kind === 'instructional_rules' ? note('이 기준은 게임의 교육용 규칙입니다. 모델의 정답 보장이나 일반 성능 평가가 아닙니다.', 'learning-muted') : '') +
+      (row.reference_kind === 'sampled_next_second_search' ? note('관찰 순간의 상태를 칸·박자 단위로 바꿔 탐색한 교육용 기준입니다. 실제 게임의 연속 이동·재사용 대기시간·입력 시점에 따른 최적 행동을 보장하지 않습니다.', 'learning-muted') : '');
   }
 
   function renderCallOutput(call, data, questions) {
     const calls = (data.calls || []).filter(c => c.id === call.id || (call.step != null && c.step === call.step));
-    return calls.map(c => renderProvider({provider: c.provider, status: c.finished_at ? c.status : 'running', action: c.action, answers: c.response, confidence: c.confidence, error: c.error}, c.role === 'live' ? (data.activity === 'compare' ? '비교 실험 · 기준 모델' : '제어 모델') : '비교 모델 · 기록만', questions, c)).join('');
+    return calls.map(c => renderProvider({provider: c.provider, status: c.finished_at ? c.status : 'running', action: c.action, answers: c.response, confidence: c.confidence, error: c.error}, c.role === 'warmup' ? '모델 준비 · 게임 입력 없음' : c.role === 'live' ? (data.activity === 'compare' ? '비교 실험 · 기준 모델' : '제어 모델') : '비교 모델 · 기록만', questions, c)).join('');
   }
 
   function effectStatus(row) {

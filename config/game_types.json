@@ -19,7 +19,7 @@
     "latency_budget_ms": 100,
     "providers": {
       "live": "laya-mlx",
-      "shadow": []
+      "shadow": ["jev"]
     },
     "note": "가장 빡빡한 지연 예산"
   },
@@ -30,7 +30,7 @@
     "latency_budget_ms": 300,
     "providers": {
       "live": "laya-mlx",
-      "shadow": []
+      "shadow": ["jev"]
     },
     "note": "라인·미니언·타워·기지 상태를 보고 교전과 후퇴 판단"
   }

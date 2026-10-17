@@ -21,5 +21,6 @@
     "lane_left": "lane_left",
     "lane_right": "lane_right",
     "wait": "wait"
-  }
+  },
+  "continuous": true
 }

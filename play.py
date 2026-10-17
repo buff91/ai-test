@@ -197,7 +197,7 @@ def cmd_run(args):
         ("켜짐" if args.policy else "기록만") if policy else "없음"))
     if kbm:
         print("마우스를 화면 왼쪽 위 모서리로 옮기거나 Ctrl+C로 멈춥니다.")
-    pause = kbm and (args.pause or bool(game.config["pause_key"] and not args.no_pause))
+    pause = kbm and (args.pause or bool(not realtime and game.config["pause_key"] and not args.no_pause))
     with connect(game, args, dry_run=args.dry_run, reflex=args.reflex) as client:
         session = play(client, decider, game.config, steps=args.steps, pause=pause,
                        record=not args.no_record, save_frames=args.frames, shadows=shadow_deciders,
@@ -362,7 +362,7 @@ def main():
     p.add_argument("--no-shadow", action="store_true", help="shadow 모델을 돌리지 않음")
     p.add_argument("--steps", type=int, default=0, help="0이면 멈출 때까지")
     p.add_argument("--dry-run", action="store_true", help="kbm 게임만: 입력 이벤트를 보내지 않고 기록만")
-    p.add_argument("--pause", action="store_true", help="kbm 게임만: 판단하는 동안 pause_key로 게임을 멈춤")
+    p.add_argument("--pause", action="store_true", help="kbm 게임만: 판단하는 동안 pause_key로 게임을 멈춤 (실시간 게임도 명시할 때만 적용)")
     p.add_argument("--no-pause", action="store_true", help="kbm 게임만: pause_key가 있어도 쓰지 않음")
     p.add_argument("--reflex", action="store_true", help="kbm 게임만: observer.reflex() 빠른 규칙도 실행")
     p.add_argument("--frames", action="store_true", help="kbm 게임만: 매 판단 화면을 PNG로 저장")

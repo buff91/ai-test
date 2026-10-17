@@ -17,14 +17,17 @@ from sims.base import truth
 
 def cmd_serve(args):
     from gamelab.protocol import GameServer
-    from sims.service import SimService
+    from sims.service import RealtimeService
 
-    server = GameServer(args.socket, SimService(SIMS[args.game], args.scenario))
+    service = RealtimeService(SIMS[args.game], args.scenario, tick_ms=args.tick_ms)
+    server = GameServer(args.socket, service)
+    service.start_clock()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        service.stop_clock()
         server.server_close()
         Path(args.socket).unlink(missing_ok=True)
 
@@ -59,19 +62,26 @@ def cmd_cases(args):
 
 
 def cmd_play(args):
-    sim = SIMS[args.game].start(args.scenario)
-    while sim.outcome == "playing":
-        print("\n" + sim.describe())
-        if args.show_truth:
-            print("truth: %s" % json.dumps(truth(sim), ensure_ascii=False))
-        action = input("행동 (%s, q=끝): " % ", ".join(sim.ACTIONS)).strip()
-        if action == "q":
-            return
-        if action not in sim.ACTIONS:
-            print("알 수 없는 행동입니다.")
-            continue
-        print(" ".join(sim.step(action)))
-    print("\n결과: %s" % sim.outcome)
+    from sims.service import RealtimeService
+
+    service = RealtimeService(SIMS[args.game], args.scenario)
+    service.start_clock()
+    try:
+        if service.continuous:
+            print("실시간 진행: 입력을 기다리는 동안에도 게임은 계속됩니다. 화면 플레이: python -m gamelab.desktop_game --game " + args.game)
+        while service.sim.outcome == "playing":
+            state = service.handle({"op": "state", "include_truth": args.show_truth})
+            print("\n" + state["description"])
+            if args.show_truth:
+                print("truth: %s" % json.dumps(state["truth"], ensure_ascii=False))
+            action = input("행동 (%s, q=끝): " % ", ".join(service.sim.ACTIONS)).strip()
+            if action == "q":
+                return
+            response = service.handle({"op": "step", "action": action, "include_truth": False})
+            print(response.get("error") or " ".join(response["events"]))
+        print("\n결과: %s" % service.sim.outcome)
+    finally:
+        service.stop_clock()
 
 
 def main():
@@ -81,6 +91,7 @@ def main():
     p.add_argument("game", choices=sorted(SIMS))
     p.add_argument("--socket", required=True)
     p.add_argument("--scenario")
+    p.add_argument("--tick-ms", type=int, default=1000, help="Game second duration in milliseconds (100-10000).")
     p.set_defaults(fn=cmd_serve)
     p = sub.add_parser("cases", help="시나리오를 진행하며 정답이 붙은 비교 케이스 생성")
     p.add_argument("game", choices=sorted(SIMS))

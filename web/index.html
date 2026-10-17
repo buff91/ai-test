@@ -6,7 +6,9 @@
   <meta name="session-token" content="__SESSION_TOKEN__">
   <title>Decision Lab · Laya와 Jev 판단 실습</title>
   <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/training.css">
   <script src="/learning.js" defer></script>
+  <script src="/training.js" defer></script>
   <script src="/app.js" defer></script>
 </head>
 <body>
@@ -17,7 +19,7 @@
       <div class="connection"><span class="pulse off"></span><span id="connection-text">연결 안 됨</span></div>
     </header>
     <div class="intro">
-      <div><span class="section-index">턴제 RPG · 레이싱 · MOBA</span><h2>원하는 방식으로 플레이하세요.</h2><p>직접 조작하거나, 두 가지 연결 방식 중 하나로 모델에게 맡기세요. 진행 순서 없이 선택할 수 있습니다.</p></div>
+      <div><span class="section-index">턴제 RPG · 실시간 레이싱 · 실시간 MOBA</span><h2>움직이는 게임에서 모델의 판단을 확인하세요.</h2><p>레이싱과 MOBA가 계속 진행되는 동안 Laya와 Jev가 관찰하고 행동을 선택합니다. 두 모델의 응답 시간과 실제 입력을 나란히 확인하세요.</p></div>
       <a class="glossary-link" href="#glossary">용어 안내 ↓</a>
     </div>
     <div class="play-modes" role="group" aria-label="플레이 방식" aria-describedby="play-mode-note">
@@ -150,6 +152,14 @@
         <details class="flow-details" open><summary>처리 단계와 현재 진행 상황</summary><div id="pipeline" class="pipeline"></div><div class="concept-flow"><div><b>상태</b><small>게임 데이터 또는 화면</small></div><i>→</i><div><b>행동 선택</b><small>선택지 중 다음 행동</small></div><i>→</i><div><b>입력</b><small>소켓 또는 키보드·마우스</small></div><i>→</i><div><b>검증</b><small>다음 상태와 기록 확인</small></div></div></details>
       </section>
       <section class="trace-column" aria-label="모델 입력과 판단 결과">
+        <section id="live-decisions" class="live-decisions" aria-label="실시간 모델 판단" hidden>
+          <div class="live-decision-heading"><div><span class="section-index">게임 진행과 모델 판단</span><h2>실시간 모델 판단</h2></div><span id="live-world-status" class="live-world-status">관찰 대기</span></div>
+          <p id="live-demo-status" class="field-note" role="status">게임을 연결하면 실시간 판단 시연을 시작할 수 있습니다.</p>
+          <div class="action-row live-demo-actions"><button id="realtime-demo" class="button-primary">실시간 판단 시연 시작</button><label class="check"><input id="live-jev-choice" type="checkbox"><span>Jev도 판단 비교</span></label></div>
+          <p id="live-demo-note" class="field-note"></p>
+          <div id="live-provider-cards" class="live-provider-cards"></div>
+          <p class="live-decision-legend">제어 모델의 행동을 게임에 전달합니다. 비교 모델은 판단을 기록하며, 제어 모델의 다음 관찰을 기다리게 하지 않습니다.</p>
+        </section>
         <section id="learning-inspector" class="learning-inspector" aria-label="한 번의 판단 해부">
           <div class="panel-heading"><span class="section-index">03 · 동작 원리 확인</span><h2>한 번의 판단 해부</h2><p class="field-note">실제로 보낸 입력과 반환된 값을 따라갑니다.</p></div>
           <label for="learning-record">살펴볼 판단</label><select id="learning-record"><option value="latest">최신 관찰 · 아직 실행 전</option></select>
@@ -167,6 +177,7 @@
         <div class="trace-panels"><div id="panel-calls" role="tabpanel" aria-labelledby="tab-calls"><p class="trace-hint">최근 요청이 위에 표시됩니다. 항목을 펼치면 요청과 응답 원문을 확인할 수 있습니다.</p><div id="calls" class="calls"><div class="empty">모델을 실행하면 요청·응답·호출 시간이 여기에 쌓입니다.</div></div></div><div id="panel-decisions" role="tabpanel" aria-labelledby="tab-decisions" hidden><p id="session-note" class="trace-hint">최근 판단이 위에 표시됩니다.</p><div id="summary" class="summary" hidden></div><div id="decisions" class="decision-list"><div class="empty">모델을 실행하면 질문별 판단과 정답이 여기에 쌓입니다.</div></div></div><div id="panel-events" role="tabpanel" aria-labelledby="tab-events" hidden><p class="trace-hint">연결, 직접 조작, 모델 실행 중 발생한 일을 시간순으로 확인합니다.</p><div id="events" class="events"></div></div></div>
         </div></details>
       </section>
+      <section id="laya-training" class="laya-training" aria-label="게임별 Laya 파인튜닝"></section>
     </main>
     <footer><span>DECISION LAB</span> 게임을 관찰하고, 다음 행동을 선택하고, 결과로 확인합니다.</footer>
   </div>

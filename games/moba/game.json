@@ -21,7 +21,7 @@
   "versions": {
     "sim-v1": {
       "name": "시뮬레이션 v1",
-      "description": "화면 없이 결정론적 전투/주행 규칙과 정답을 비교합니다. 입력마다 한 단계를 진행합니다.",
+      "description": "화면 없이 실시간 게임 시계를 실행합니다. 입력이 없거나 모델이 판단하는 동안에도 전투·주행이 진행됩니다.",
       "interface": "socket",
       "interfaces": {
         "socket": {},
@@ -30,7 +30,7 @@
     },
     "desktop-v1": {
       "name": "화면 실습 v1",
-      "description": "실제 게임 창에서 직접 조작하고 Jev/Laya의 socket 또는 화면·키마 제어를 비교합니다.",
+      "description": "실시간 게임 창에서 직접 조작하고 Jev/Laya의 소켓 또는 화면·키마 제어를 비교합니다. 모델 판단 중에도 게임이 진행됩니다.",
       "interface": "app",
       "interfaces": {
         "app": {},

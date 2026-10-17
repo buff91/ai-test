@@ -140,4 +140,9 @@ sent.input_trace = {connector: 'kbm', command: [{tap: '1'}], result: {ok: true, 
 panel.update(status([sent]), game);
 assert.match(node('effect').innerHTML, /키마 입력 전송 · 게임 적용 미확인/);
 assert.doesNotMatch(node('effect').innerHTML, /이 행동의 적용을 보고/);
+const sampled = row(13);
+sampled.reference_kind = 'sampled_next_second_search';
+panel.update(status([sampled]), game);
+assert.match(node('output').innerHTML, /관찰 순간의 상태를 칸·박자 단위로 바꿔 탐색한 교육용 기준/);
+assert.match(node('output').innerHTML, /연속 이동·재사용 대기시간·입력 시점에 따른 최적 행동을 보장하지 않습니다/);
 console.log('learning panel: request escaping, record pinning, live calls, probabilities, effects, session reset, preparation and truncation passed');

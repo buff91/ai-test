@@ -2,6 +2,7 @@
 
 import os
 import json
+import hashlib
 from copy import deepcopy
 import secrets
 import tempfile
@@ -13,12 +14,12 @@ from datetime import datetime
 from itertools import count
 from pathlib import Path
 
-from gamelab import build_info
+from gamelab import build_info, grade
 from gamelab.game_case import GAMES, ROOT, GameCase, list_games
 from gamelab.game_windows import GameWindows
 from gamelab.game_types import PROVIDER_NAMES
 from gamelab.policy import Policy
-from gamelab.runner import format_row, new_session, record_row, summarize_rows, tick, write_summary
+from gamelab.runner import ShadowTracker, format_row, new_session, record_row, summarize_rows, tick, write_summary
 from settings import PROVIDERS
 
 ROWS_SHOWN = 30
@@ -27,10 +28,10 @@ PHASES = {"observe": "게임 관찰", "act": "행동 전송", "pause": "게임 �
 RUNTIMES = {"jev": "TypeSafe API (HTTPS)", "laya": "로컬 PyTorch", "laya-mlx": "로컬 MLX (Apple GPU)"}
 
 
-def default_decider(provider, game, key):
+def default_decider(provider, game, key, checkpoint=None):
     from gamelab.decide import for_game  # loads the model runtimes only when a model is first asked
 
-    return for_game(provider, game, key)
+    return for_game(provider, game, key, checkpoint=checkpoint)
 
 
 class Probe:
@@ -115,7 +116,7 @@ def _safe_error(exc, key=None):
 
 
 class Lab:
-    def __init__(self, games_dir=GAMES, make_decider=default_decider, record=True):
+    def __init__(self, games_dir=GAMES, make_decider=default_decider, record=True, training_root=None):
         self.games_dir = Path(games_dir)
         self.make_decider = make_decider
         self.record = record
@@ -129,6 +130,19 @@ class Lab:
         self.stack = None
         self.game_windows = GameWindows(self.games_dir)
         self.frame_dir = tempfile.TemporaryDirectory(prefix="console-frames-")
+        from gamelab.datasets import DatasetStore
+        from gamelab.training import TrainingManager
+        self.training_dir = None
+        if training_root is None and not record:
+            self.training_dir = tempfile.TemporaryDirectory(prefix="console-training-")
+            training_root = Path(self.training_dir.name)
+        if training_root is None:
+            training_root = ROOT / "results" / "laya-training"
+            if self.games_dir.resolve() != GAMES.resolve():
+                catalog_id = hashlib.sha256(str(self.games_dir.resolve()).encode()).hexdigest()[:16]
+                training_root = training_root / ("catalog-" + catalog_id)
+        self.datasets = DatasetStore(training_root)
+        self.training = TrainingManager(training_root, store=self.datasets)
         self._clear()
 
     def _clear(self):
@@ -147,6 +161,8 @@ class Lab:
         self.auto = False
         self.error = None
         self.options = {}
+        self.active_options = {}
+        self.shadow_tracker = ShadowTracker()
         self.cancel_run = threading.Event()
         self.link = {"last_ok_at": None, "rtt_ms": None, "failures": 0, "last_error": None, "last_op": None}
         self.phase = {"name": "대기", "since": time.time()}
@@ -158,6 +174,8 @@ class Lab:
         self.window_build = None
         self.frame_at = None
         self.input_trace = None
+        self.demonstration = {"enabled": False, "status": "idle", "scenario": None,
+                              "started_at": None, "warmup_ms": 0}
 
     def _event(self, text):
         self.events.insert(0, {"at": datetime.now().strftime("%H:%M:%S"), "text": text})
@@ -303,9 +321,12 @@ class Lab:
 
     def close(self):
         self.disconnect()
+        self.training.close()
         self.game_windows.close()
         self.pool.shutdown(wait=False, cancel_futures=True)
         self.frame_dir.cleanup()
+        if self.training_dir is not None:
+            self.training_dir.cleanup()
 
     # Liveness and calls (called from Probe and Traced) -----------------------
 
@@ -349,7 +370,8 @@ class Lab:
                 if step is None:
                     call.update(step=self.active_step, episode=self.active_episode)
                 self.calls.insert(0, call)
-                del self.calls[CALLS_KEPT:]
+                self.calls[:] = [one for index, one in enumerate(self.calls)
+                                 if index < CALLS_KEPT or not one.get("finished_at")]
                 if role == "live":
                     self._phase_locked("모델 판단")
         return call
@@ -365,8 +387,33 @@ class Lab:
                         routed_model=row.get("checkpoint") or row.get("model"), reported_model=row.get("model"),
                         routing=row.get("routing"), checkpoint=row.get("checkpoint"),
                         checkpoint_cached=row.get("checkpoint_cached"), model_ms_scope=row.get("model_ms_scope"),
+                        runtime_wait_ms=row.get("runtime_wait_ms"),
                         confidence=row.get("confidence"),
                         response=row.get("answers"))
+            # A slow reply may finish after dozens of control calls. Keep that
+            # actual completion visible instead of dropping it with old starts.
+            if call in self.calls:
+                self.calls.remove(call)
+                self.calls.insert(0, call)
+            if call.get("role") == "shadow" and self.game is not None:
+                # Real-time comparisons finish after their control tick. Grade
+                # against that exact request, never the newest game frame.
+                for original in self.rows:
+                    if (original.get("step") != call.get("step") or original.get("episode") != call.get("episode")
+                            or original.get("request") != {k: call["request"][k] for k in ("state", "questions")}):
+                        continue
+                    for index, shadow in enumerate(original.get("shadow", [])):
+                        if (shadow.get("provider") != call["provider"] or shadow.get("status") != "running"
+                                or not shadow.get("current_observation", True)):
+                            continue
+                        completed = {**deepcopy(row), "source_step": original["step"],
+                                     "source_episode": original["episode"], "current_observation": True,
+                                     "agrees": row.get("action") == original.get("action")}
+                        completed["grade"] = grade.grade(row.get("answers"), original.get("truth"),
+                                                         original["request"]["questions"]) if row.get("status") == "ok" else None
+                        original["shadow"][index] = completed
+                        self._capture_failure(self.game, original)
+                    break
 
     def _observed_locked(self, observed):
         self.observed, self.observed_at = observed, time.time()
@@ -418,8 +465,11 @@ class Lab:
                 "runtime": {**(self.info.get("runtime") or {}), "game_build": self.info.get("game_build"),
                             "window_build": self.window_build},
                 "phase": {**self.phase, "busy": self.busy},
-                "calls": self.calls[:12],
+                "calls": [one for index, one in enumerate(self.calls)
+                          if index < 12 or not one.get("finished_at")],
                 "preparations": self.preparations, "activity": self.activity,
+                "demonstration": deepcopy(self.demonstration),
+                "active_options": deepcopy(self.active_options),
                 "frame_at": self.frame_at,
                 "input_trace": self.input_trace,
                 "run_focus": self.run_focus,
@@ -460,12 +510,23 @@ class Lab:
 
     # Model -----------------------------------------------------------------
 
-    def run(self, apply=True, auto=False, provider=None, shadows=None, policy=None, key=None, decision_delay_ms=None):
+    def run(self, apply=True, auto=False, provider=None, shadows=None, policy=None, key=None, decision_delay_ms=None,
+            demonstration=False):
         with self.lock:
             if self.status_name != "connected":
                 raise ValueError("먼저 게임에 연결하세요.")
             if self.busy:
                 raise ValueError("모델이 이미 판단 중입니다.")
+            if demonstration:
+                if not apply or not auto:
+                    raise ValueError("실시간 시연은 게임 입력을 사용하는 자동 플레이로 시작하세요.")
+                if self.game.type_spec["timing"] != "realtime" or not self.game.config.get("continuous"):
+                    raise ValueError("실시간 게임에 연결한 뒤 시연을 시작하세요.")
+                if self.game.connector != "socket" or not self.info.get("scenarios"):
+                    raise ValueError("실시간 시연은 새 판을 시작할 수 있는 게임 데이터 연결이 필요합니다.")
+                scenario = ((self.observed or {}).get("state") or {}).get("scenario")
+                if scenario not in self.info["scenarios"]:
+                    raise ValueError("현재 시작 상황을 확인할 수 없습니다. 새 판을 시작한 뒤 시연하세요.")
             if key:
                 self.key = key.strip()
             if provider is not None:
@@ -486,6 +547,8 @@ class Lab:
                 raise ValueError("Jev API 키를 입력하세요.")
             self.busy = True
             self.activity = "run"
+            self.demonstration = {"enabled": bool(demonstration), "status": "preparing" if demonstration else "idle",
+                                  "scenario": scenario if demonstration else None, "started_at": None, "warmup_ms": 0}
             self.preparations = []
             self.run_focus = None
             self.auto = bool(auto and apply)
@@ -493,7 +556,9 @@ class Lab:
             self.cancel_run = threading.Event()
             generation = self.generation
             focus = bool(apply and not self.options.get("dry_run") and self.info.get("capabilities", {}).get("focus"))
-            args = (generation, self.game, self.client, dict(self.options), self.key, bool(apply), self.cancel_run, focus)
+            worker_options = {**self.options, "demonstration": bool(demonstration)}
+            self.active_options = deepcopy(worker_options)
+            args = (generation, self.game, self.client, worker_options, self.key, bool(apply), self.cancel_run, focus)
         threading.Thread(target=self._worker, args=args, daemon=True).start()
         return {"started": True}
 
@@ -514,8 +579,11 @@ class Lab:
                 raise ValueError("Jev 비교에는 API 키가 필요합니다. Jev API 키를 입력하세요.")
             options = {**self.options, "provider": providers[0], "shadows": providers[1:],
                        "policy": False, "decision_delay_ms": 0, "comparison": True}
+            self.active_options = deepcopy(options)
             self.busy, self.auto, self.error = True, False, None
             self.activity, self.preparations = "compare", []
+            self.demonstration = {"enabled": False, "status": "idle", "scenario": None,
+                                  "started_at": None, "warmup_ms": 0}
             self.run_focus = None
             self.cancel_run = threading.Event()
             args = (self.generation, self.game, self.client, options, self.key, False, self.cancel_run)
@@ -535,7 +603,13 @@ class Lab:
                 self.preparations.append(preparation)
         started = time.perf_counter()
         try:
-            decider = self.make_decider(provider, game, key)
+            if self.make_decider is default_decider and provider == "laya":
+                checkpoint = self.training.active_checkpoint(game)
+                decider = self.make_decider(provider, game, key, checkpoint=checkpoint)
+                if checkpoint:
+                    preparation["checkpoint"] = str(checkpoint)
+            else:
+                decider = self.make_decider(provider, game, key)
         except Exception as exc:
             preparation.update(status="error", error=_safe_error(exc, key))
             if not tolerate_failure:
@@ -574,6 +648,69 @@ class Lab:
         with self.lock:
             self._event(text)
 
+    def _prepare_demonstration(self, generation, game, client, decider, shadows, policy, cancel_event):
+        """Prime local lazy inference without input, then begin a fresh live episode.
+
+        Jev has no local checkpoint to load and receives no extra API call here.
+        Warm-up responses are visible evidence but never become gameplay rows.
+        """
+        with self.lock:
+            if generation != self.generation or cancel_event.is_set():
+                raise InterruptedError("모델 준비를 중지했습니다.")
+            self.demonstration["status"] = "warming"
+            self.active_step = self.active_episode = None
+        observed = client.request("observe", **self._frame_args(game))
+        if not observed.get("ok"):
+            raise ValueError(observed.get("error") or "모델 준비에 사용할 게임 상태를 읽지 못했습니다.")
+        state = observed.get("description") or observed["state"]
+        candidates = [decider, *shadows]
+        if policy.escalate_decider is not None:
+            candidates.append(policy.escalate_decider)
+        warmed = set()
+        for traced in candidates:
+            if traced.provider == "jev" or traced.provider in warmed:
+                continue
+            with self.lock:
+                if generation != self.generation or cancel_event.is_set():
+                    raise InterruptedError("모델 준비를 중지했습니다.")
+                self._phase_locked("모델 예열 · 게임 입력 없음")
+                preparation = {"provider": traced.provider, "role": "warmup", "status": "warming",
+                               "started_at": time.time(), "finished_at": None, "preparation_ms": None,
+                               "warmup_ms": None, "router_cached": getattr(traced.decider, "router_cached", None),
+                               "model": game.providers["models"].get(traced.provider),
+                               "timing_scope": "input_free_predict", "model_loading": "inside_predict"}
+                self.preparations.append(preparation)
+            started = time.perf_counter()
+            warmup = Traced(traced.decider, self, generation, "warmup").decide(state)
+            elapsed = round((time.perf_counter() - started) * 1000, 1)
+            with self.lock:
+                if generation != self.generation:
+                    raise InterruptedError("연결이 변경되어 모델 준비를 중지했습니다.")
+                preparation.update(status="ready" if warmup.get("status") == "ok" else "error",
+                                   finished_at=time.time(), preparation_ms=elapsed, warmup_ms=elapsed,
+                                   checkpoint=warmup.get("checkpoint"), error=warmup.get("error"))
+                self.demonstration["warmup_ms"] = round(self.demonstration["warmup_ms"] + elapsed, 1)
+                if cancel_event.is_set():
+                    raise InterruptedError("모델 준비를 중지했습니다.")
+            if warmup.get("status") != "ok":
+                raise RuntimeError("%s 모델 예열 실패: %s" % (traced.provider, warmup.get("error") or "응답 실패"))
+            warmed.add(traced.provider)
+        with self.lock:
+            if generation != self.generation or cancel_event.is_set():
+                raise InterruptedError("모델 준비를 중지했습니다.")
+            scenario = self.demonstration["scenario"]
+        reset = client.request("reset", scenario=scenario)
+        if not reset.get("ok"):
+            raise ValueError(reset.get("error") or "시연을 위한 새 판을 시작하지 못했습니다.")
+        with self.lock:
+            if generation != self.generation or cancel_event.is_set():
+                raise InterruptedError("실시간 시연을 중지했습니다.")
+            self._observed_locked(reset)
+            if self.rows:
+                self.episode += 1
+            self.demonstration.update(status="running", started_at=time.time())
+            self._event("모델 준비 완료 · 같은 시작 상황에서 실시간 시연을 시작합니다: %s" % scenario)
+
     def _worker(self, generation, game, client, options, key, apply, cancel_event, focus=False):
         focus_result = None
         if focus:
@@ -603,6 +740,8 @@ class Lab:
                     return
         try:
             decider, shadows, policy = self._deciders(generation, game, options, key)
+            if options.get("demonstration"):
+                self._prepare_demonstration(generation, game, client, decider, shadows, policy, cancel_event)
         except InterruptedError:
             with self.lock:
                 if generation == self.generation:
@@ -614,6 +753,7 @@ class Lab:
             return
         kbm = game.connector == "kbm"
         realtime = game.type_spec["timing"] == "realtime"
+        shadow_tracker = self.shadow_tracker if realtime else None
         interval = game.config["interval_ms"] / 1000
         with self.lock:
             preparation_rows = [dict(p) for p in self.preparations] if generation == self.generation else []
@@ -630,8 +770,8 @@ class Lab:
                 step, episode = len(self.rows) + 1, self.episode
                 self.active_step, self.active_episode = step, episode
             try:
-                result = tick(client, decider, game.config, pause=kbm and bool(game.config["pause_key"]),
-                              shadows=shadows, shadow_wait_ms=game.config["interval_ms"] if realtime else None,
+                result = tick(client, decider, game.config, pause=kbm and not realtime and bool(game.config["pause_key"]),
+                              shadows=shadows, shadow_wait_ms=0 if realtime else None, shadow_tracker=shadow_tracker,
                               questions=game.questions, policy=policy, pool=self.pool,
                               step=step, episode=episode, apply=apply,
                               decision_delay_ms=options.get("decision_delay_ms", 0), cancel_event=cancel_event)
@@ -655,10 +795,13 @@ class Lab:
                     row["focus"] = focus_result
                     focus_result = None
                 row["comparison"] = bool(options.get("comparison"))
+                row["demonstration"] = bool(options.get("demonstration"))
                 row["preparations"] = preparation_rows
                 preparation_rows = []
                 row["preparation_ms"] = round(sum(p["preparation_ms"] or 0 for p in row["preparations"]), 1)
+                row["game_build"] = deepcopy(self.info.get("game_build"))
                 self.rows.insert(0, row)
+                self._capture_failure(game, row)
                 self.input_trace = row.get("input_trace")
                 if self.record and apply:
                     self.session = self.session or new_session(game.id, self._session_metadata())
@@ -710,6 +853,8 @@ class Lab:
         self.auto = False
         self.activity = None
         self.error = message
+        if self.demonstration["enabled"]:
+            self.demonstration["status"] = "error"
         self._phase_locked("대기")
         self._event(message)
 
@@ -717,6 +862,8 @@ class Lab:
         with self.lock:
             self.auto = False
             self.cancel_run.set()
+            if self.demonstration["enabled"]:
+                self.demonstration["status"] = "stopped"
         return {"auto": False}
 
     # Direct control ----------------------------------------------------------
@@ -772,6 +919,80 @@ class Lab:
             self.key = (key or "").strip()
         return {"key_set": bool(self.key)}
 
+    # Persistent game-specific failure review and Laya checkpoints ------------
+
+    def _training_game(self, game_id, version=None):
+        if not isinstance(game_id, str) or game_id not in list_games(self.games_dir):
+            raise ValueError("학습할 게임을 선택하세요.")
+        with self.lock:
+            if self.game is not None and self.game.id == game_id and (version is None or self.game.version == version):
+                return self.game
+        return GameCase(game_id, self.games_dir, version=version)
+
+    def _capture_failure(self, game, row):
+        try:
+            captured = self.datasets.capture(game, row)
+            if captured:
+                row["training_case_id"] = captured["id"]
+        except (OSError, ValueError, TypeError) as exc:
+            # A full disk must not interrupt a real-time game's input loop.
+            row["training_capture_error"] = _safe_error(exc, self.key)
+            self._event("실패 사례 저장 실패: " + row["training_capture_error"])
+
+    def training_status(self, game_id, version=None):
+        game = self._training_game(game_id, version)
+        return {"game": game.id, "version": game.version,
+                "dataset": self.datasets.status(game), **self.training.status(game)}
+
+    def training_collect(self, game_id, call_id=None, version=None):
+        game = self._training_game(game_id, version)
+        with self.lock:
+            if self.game is None or self.game.id != game.id or self.game.version != game.version:
+                raise ValueError("이 게임·버전의 실행 기록이 없습니다. 먼저 연결해서 판단을 실행하세요.")
+            rows = deepcopy(self.rows)
+        if call_id is not None:
+            if isinstance(call_id, bool) or not isinstance(call_id, int):
+                raise ValueError("수집할 판단의 call_id가 필요합니다.")
+            rows = [row for row in rows if row.get("decision", {}).get("call_id") == call_id or
+                    any(d.get("call_id") == call_id for d in row.get("shadow", []))]
+            if not rows:
+                raise ValueError("수집할 판단 기록을 찾지 못했습니다.")
+        captured = [case for row in reversed(rows)
+                    if (case := self.datasets.capture(game, row, force=call_id is not None))]
+        return {"collected": len(captured), **self.training_status(game.id, game.version)}
+
+    def training_review(self, game_id, case_id, expected=None, split="train", review="approved", version=None):
+        game = self._training_game(game_id, version)
+        self.datasets.review(game, case_id, expected=expected, split=split, review=review)
+        return self.training_status(game.id, game.version)
+
+    def training_train(self, game_id, options, version=None):
+        return self.training.start_train(self._training_game(game_id, version), options)
+
+    def training_evaluate(self, game_id, checkpoint_id, version=None):
+        return self.training.start_evaluate(self._training_game(game_id, version), checkpoint_id)
+
+    def training_apply(self, game_id, checkpoint_id, version=None):
+        game = self._training_game(game_id, version)
+        with self.lock:
+            if self.busy or self.auto:
+                raise ValueError("게임 자동 제어를 중지하고 현재 판단이 끝난 뒤 적용하세요.")
+            result = self.training.activate(game, checkpoint_id)
+            if self.game is not None and self.game.id == game.id and self.game.version == game.version:
+                self.options["provider"] = "laya"
+                self.options["shadows"] = [p for p in self.options.get("shadows", []) if p != "laya"]
+            self._event("%s / %s: 평가한 Laya 체크포인트를 적용했습니다." % (game.id, game.version))
+            return result
+
+    def training_rollback(self, game_id, version=None):
+        game = self._training_game(game_id, version)
+        with self.lock:
+            if self.busy or self.auto:
+                raise ValueError("게임 자동 제어를 중지하고 현재 판단이 끝난 뒤 되돌리세요.")
+            result = self.training.rollback(game)
+            self._event("%s / %s: 기본 Laya 모델로 되돌렸습니다." % (game.id, game.version))
+            return result
+
     def export(self):
         with self.lock:
             game = self.game
@@ -783,6 +1004,8 @@ class Lab:
                     "rows": list(reversed(self.rows)), "calls": list(reversed(self.calls))}
             data["preparations"] = self.preparations
             data["run_focus"] = self.run_focus
+            data["demonstration"] = deepcopy(self.demonstration)
+            data["active_options"] = deepcopy(self.active_options)
         return json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
 
     def _session_metadata(self):

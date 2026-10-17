@@ -14,6 +14,7 @@ const openCalls = new Set();
 const loadedViews = new Set();
 let polling = false;
 let lesson = 'play';
+let playModeChosen = false;
 let settingsSchema = {values: {}, editable: [], fields: {}};
 let activeSettingsKey = '';
 const connectionDrafts = new Map();
@@ -314,6 +315,7 @@ function playModeBlock(mode) {
 
 function selectPlayMode(mode) {
   if (playModeBlock(mode)) return;
+  playModeChosen = true;
   if (mode !== 'play' && latest?.connection?.status !== 'connected') {
     selectControlRoute(mode === 'kbm' ? 'kbm' : 'internal');
   }
@@ -445,6 +447,7 @@ function fillGames() {
 function onGameChange(preferred) {
   windowPreparationError = '';
   const game = selectedGame();
+  if (!playModeChosen) lesson = isRealtime(game) ? 'socket' : 'play';
   const items = (game?.interfaces || []).filter(i => !i.error);
   $('target').replaceChildren(...items.map(i => new Option(`${modeLabels[modeOf(i)]} · ${connectorLabels[i.connector] || i.connector} · ${i.version}/${i.name}`, `${i.version}/${i.name}`)));
   // Revisit the same prepared instance unless the user explicitly chose another target.
@@ -634,6 +637,17 @@ function modelPayload() {
 
 function setupControls() {
   window.DecisionLearning?.init();
+  window.LayaTraining?.init({
+    api, getGame: selectedGame, getStatus: () => latest,
+    getVersion: () => connectedGame()?.id === selectedGame()?.id ? latest?.connection?.target?.version : selectedInterface()?.version,
+    onApplied: applied => {
+      const version = connectedGame()?.id === selectedGame()?.id ? latest?.connection?.target?.version : selectedInterface()?.version;
+      if (selectedGame()?.id !== applied.game || version !== applied.version) return;
+      choice = {...choice, provider: 'laya', shadows: choice.shadows.filter(provider => provider !== 'laya')};
+      renderModelControls(connectedGame() || selectedGame());
+      renderAdvancedSummary();
+    },
+  });
   ['compare-a', 'compare-b'].forEach(id => $(id).addEventListener('change', () => updateComparisonControls(latest)));
   $('compare').addEventListener('click', () => command('/api/compare', {providers: [$('compare-a').value, $('compare-b').value]}));
   $('stop').addEventListener('click', () => command('/api/auto', {enabled: false}));
@@ -654,7 +668,10 @@ function setupControls() {
   $('prepare-window').addEventListener('click', prepareGameWindow);
   $('control-routes').addEventListener('click', event => {
     const button = event.target.closest('[data-route]');
-    if (button && !button.disabled) selectControlRoute(button.dataset.route);
+    if (button && !button.disabled) {
+      playModeChosen = true;
+      selectControlRoute(button.dataset.route);
+    }
   });
   $('connection-json').addEventListener('input', () => { rememberTargetPreference(); renderWindowPreparation(); });
   $('socket-path').addEventListener('input', rememberTargetPreference);
@@ -717,6 +734,13 @@ function setupControls() {
   $('run').addEventListener('click', () => command('/api/run', {...modelPayload(), apply: true}));
   $('analyze').addEventListener('click', () => command('/api/run', {...modelPayload(), apply: false}));
   $('auto').addEventListener('click', () => command('/api/auto', {...modelPayload(), enabled: !(latest && latest.auto)}));
+  $('realtime-demo').addEventListener('click', () => command('/api/auto', {...modelPayload(), enabled: true, demonstration: true}));
+  $('live-jev-choice').addEventListener('change', event => {
+    if (choice.provider === 'jev' || latest?.busy || latest?.auto) return;
+    choice.shadows = event.target.checked ? [...new Set([...choice.shadows, 'jev'])] : choice.shadows.filter(p => p !== 'jev');
+    renderModelControls(connectedGame() || selectedGame());
+    updateLiveDecisions(latest || {});
+  });
   $('reset').addEventListener('click', () => command('/api/reset', {scenario: $('scenario').value || null}));
   $('scenario').addEventListener('change', event => command('/api/reset', {scenario: event.target.value || null}));
   $('manual-actions').addEventListener('click', event => {
@@ -895,6 +919,12 @@ function pretty(value) {
   return typeof value === 'string' ? value : JSON.stringify(value, null, 2);
 }
 
+function referenceNote(kind) {
+  if (kind === 'instructional_rules') return '교육용 규칙 기준입니다. 최적 행동의 증명이 아닙니다.';
+  if (kind === 'sampled_next_second_search') return '관찰 순간의 상태를 칸·박자 단위로 바꿔 탐색한 교육용 기준입니다. 실제 게임의 연속 이동·재사용 대기시간·입력 시점에 따른 최적 행동을 보장하지 않습니다.';
+  return '';
+}
+
 function updateObserved(data) {
   const o = data.observed;
   const game = connectedGame();
@@ -924,7 +954,8 @@ function updateObserved(data) {
   holder.innerHTML = (o.done ? '<div class="gv-done">판 끝</div>' : '') + html;
   applyWidths(holder);
   $('state-text').textContent = o.description || pretty(o.state);
-  $('truth').textContent = o.truth ? (o.reference_kind === 'instructional_rules' ? '교육용 규칙 기준입니다. 최적 행동의 증명이 아닙니다.\n' : '') + pretty(o.truth) : '이 게임은 채점 기준을 보내지 않습니다.';
+  const reference = referenceNote(o.reference_kind);
+  $('truth').textContent = o.truth ? (reference ? reference + '\n' : '') + pretty(o.truth) : '이 게임은 채점 기준을 보내지 않습니다.';
 }
 
 async function updateFrame(data) {
@@ -975,6 +1006,99 @@ function updateInputTrace(data) {
     (trace.mapped_command != null ? `<details class="state-details"><summary>설정에 정의된 행동 매핑 <span>전송 여부는 위의 명령·응답으로 확인</span></summary><pre class="state-box">${esc(pretty(trace.mapped_command))}</pre></details>` : '');
 }
 
+// Live decision demonstration ---------------------------------------------------
+
+function callRoleLabel(call) {
+  if (call.role === 'warmup') return '모델 준비 · 입력 없음';
+  if (call.comparison || call.role === 'comparison') return '비교 실험 · 기록만';
+  return call.role === 'live' ? '제어 모델' : call.role === 'shadow' ? '비교 모델 · 기록만' : call.role || '모델';
+}
+
+function liveProviderState(data, provider, configuration) {
+  const selected = provider === configuration.provider || (configuration.shadows || []).includes(provider);
+  const calls = (data.calls || []).filter(call => call.provider === provider);
+  const running = calls.find(call => !call.finished_at);
+  const completed = calls.find(call => call.finished_at && call.role !== 'warmup');
+  let row = null, decision = null, shadow = false;
+  for (const candidate of data.rows || []) {
+    const match = [candidate.decision, ...(candidate.shadow || [])].find(item => item?.provider === provider &&
+      (completed ? item.call_id === completed.id : item.status === 'ok'));
+    if (match) { row = candidate; decision = match; shadow = match !== candidate.decision; break; }
+  }
+  const preparation = (data.preparations || []).find(item => item.provider === provider && ['preparing', 'warming', 'error'].includes(item.status));
+  const role = running ? callRoleLabel(running) : completed ? callRoleLabel(completed) :
+    provider === configuration.provider ? '제어 모델' : '비교 모델 · 기록만';
+  const elapsed = running && Number.isFinite(running.started_at) ? Math.max(0, serverNow() - running.started_at) : null;
+  let status = !selected ? '선택 안 됨' : provider === 'jev' && !data.key_set ? 'API 키 필요' : '판단 대기';
+  if (selected && preparation) status = preparation.status === 'warming' ? '첫 추론 준비 중 · 입력 없음' : preparation.status === 'error' ? '모델 준비 실패' : '모델 준비 중';
+  if (selected && completed) status = completed.status === 'ok' ? '응답 완료' : '호출 실패';
+  if (selected && running) status = `${running.role === 'warmup' ? '첫 추론 준비 중' : '판단 중'} · ${elapsed == null ? '경과 측정 중' : elapsed.toFixed(1) + '초'}`;
+  let effect = !selected ? '모델 설정에서 선택하면 실제 호출을 표시합니다.' : '아직 이 모델의 게임 입력 기록이 없습니다.';
+  if (selected && completed) {
+    if (completed.status !== 'ok') effect = completed.error || '응답 실패 · 게임 입력 없음';
+    else if (completed.role !== 'live' || completed.comparison || shadow) effect = '판단만 기록 · 게임 입력 없음';
+    else if (row) effect = rowBadge(row)[0];
+    else effect = '응답 수신 · 게임 입력 결과 대기';
+  }
+  if (selected && running?.role === 'warmup') effect = '준비용 추론 · 게임에 입력하지 않습니다.';
+  const requiresKey = selected && provider === 'jev' && !data.key_set;
+  if (requiresKey) {
+    status = 'API 키 필요';
+    effect = completed ? '이전 응답 · 새 요청에는 API 키가 필요합니다.' : 'API 키를 입력하면 실제 Jev 판단을 비교할 수 있습니다.';
+  }
+  const action = selected ? completed?.action ?? decision?.action ?? null : null;
+  const latency = selected ? completed?.ms ?? decision?.model_ms ?? null : null;
+  return {provider, selected, role, running: !!running && selected, status, effect, action, latency,
+    pendingSourceStep: selected ? running?.step ?? null : null,
+    completedSourceStep: selected ? completed?.step ?? row?.step ?? null : null, requiresKey,
+    stale: !!row?.stale && !shadow, warmup: running?.role === 'warmup', error: selected && ((completed && completed.status !== 'ok') || preparation?.status === 'error')};
+}
+
+function updateLiveDecisions(data) {
+  const game = connectedGame() || selectedGame();
+  const panel = $('live-decisions');
+  const realtime = isRealtime(game);
+  const active = !!data.busy || !!data.auto;
+  const modelView = realtime && lesson !== 'play';
+  $('top').classList.toggle('realtime-model-view', modelView);
+  $('top').classList.toggle('demonstration-running', modelView && !!data.demonstration?.enabled && active);
+  panel.hidden = !modelView;
+  if (panel.hidden) return;
+  const connected = data.connection?.status === 'connected';
+  const configuration = active ? (data.active_options || data.options || choice) : choice;
+  const state = data.observed?.state || {};
+  const elapsed = Number.isFinite(state.elapsed) ? ` · ${state.elapsed.toFixed(1)}초` : '';
+  const result = {won: '목표 달성', lost: '게임 종료', draw: '시간 종료'}[state.outcome];
+  $('live-world-status').textContent = !connected ? '게임 연결 전' : !data.observed?.ok ? '게임 상태 관찰 대기' : result ? result + elapsed : state.paused ? '게임 일시정지' + elapsed : '게임 진행 중' + elapsed;
+  $('live-world-status').classList.toggle('running', connected && !!data.observed?.ok && !result && !state.paused);
+  const demonstration = data.demonstration || {};
+  const demoStatus = {preparing: '선택한 모델을 준비하고 있습니다. 게임은 계속 진행됩니다.',
+    warming: '첫 추론을 준비하고 있습니다. 준비가 끝나면 같은 시작 상황에서 시연합니다.',
+    running: '실시간 시연 중 · 모델이 판단하는 동안에도 게임은 계속 진행됩니다.',
+    stopped: '시연을 중지했습니다.', error: demonstration.started_at ? '시연 중 오류가 발생했습니다. 실행 로그를 확인하세요.' : '시연 준비에 실패했습니다. 실행 로그를 확인하세요.'}[demonstration.status];
+  $('live-demo-status').textContent = demoStatus || (active ? '각 모델의 실제 요청과 응답을 확인하세요. 게임 시계는 모델을 기다리지 않습니다.' : '선택한 제어·비교 모델을 준비한 뒤 현재 시작 상황에서 연속 판단을 보여 줍니다.');
+  const dryRun = data.connection?.connector === 'kbm' && data.options?.dry_run;
+  const canReset = data.connection?.connector === 'socket' && (data.connection?.scenarios || []).length;
+  const keyMissing = !data.key_set && !$('api-key').value.trim();
+  const needsKey = configuration.provider === 'jev' && keyMissing;
+  const shadowNeedsKey = (configuration.shadows || []).includes('jev') && keyMissing;
+  const supportsDemonstration = data.demonstration && typeof data.demonstration === 'object';
+  const blocked = !connected ? '게임을 먼저 연결하세요.' : !supportsDemonstration ? '콘솔 재시작 필요 · 실행 중인 서버를 재시작하면 실시간 시연을 사용할 수 있습니다.' : active ? '현재 실행을 중지하면 새 시연을 시작할 수 있습니다.' :
+    dryRun ? '입력 미리보기는 판단을 기록하며 실제 게임을 제어하지 않습니다.' : !canReset ? '이 연결은 「자동 플레이」로 모델의 연속 판단을 확인하세요.' :
+    needsKey ? '선택한 Jev를 호출하려면 모델 설정에서 API 키를 입력하세요.' : '';
+  $('realtime-demo').disabled = !!blocked;
+  $('realtime-demo').title = blocked;
+  $('live-demo-note').textContent = blocked || (shadowNeedsKey ? '로컬 모델로 시연합니다. Jev 비교에는 API 키가 필요합니다.' : '로컬 모델은 준비용 추론 후 새 판에서 시작합니다. 제어 모델만 입력하고 다른 모델은 같은 관찰을 판단해 비교합니다.');
+  $('live-jev-choice').checked = configuration.provider === 'jev' || (configuration.shadows || []).includes('jev');
+  $('live-jev-choice').disabled = active || configuration.provider === 'jev';
+  const providers = [...new Set(['laya', 'jev', configuration.provider, ...(configuration.shadows || [])].filter(Boolean))];
+  $('live-provider-cards').innerHTML = providers.map(provider => {
+    const card = liveProviderState(data, provider, configuration);
+    const action = card.action == null ? '—' : game?.learning?.actions?.[card.action] || card.action;
+    return `<article class="live-provider-card ${card.running ? 'thinking' : ''} ${!card.selected ? 'inactive' : ''} ${card.error ? 'failed' : ''}"><div class="live-provider-title"><b>${esc(providerName(provider))}</b><span>${esc(card.selected ? card.role : '선택 안 됨')}</span></div><div class="live-provider-status" role="status">${esc(card.status)}</div><dl>${card.pendingSourceStep != null ? `<div><dt>판단 중인 관찰</dt><dd>${esc(card.pendingSourceStep)}번째 관찰</dd></div>` : ''}${card.completedSourceStep != null ? `<div><dt>응답한 관찰</dt><dd>${esc(card.completedSourceStep)}번째 관찰</dd></div>` : ''}<div><dt>${card.requiresKey ? '이전 선택' : card.running ? '직전 선택' : '선택한 행동'}</dt><dd>${esc(action)}</dd></div><div><dt>${card.requiresKey ? '이전 응답' : card.running ? '직전 응답' : '실측 응답'}</dt><dd>${Number.isFinite(card.latency) ? esc(Math.round(card.latency).toLocaleString()) + ' ms' : '—'}</dd></div></dl><p class="${card.stale ? 'warn' : ''}">${esc(card.effect)}</p></article>`;
+  }).join('');
+}
+
 // Pipeline and model calls ------------------------------------------------------
 
 function updatePipeline(data) {
@@ -985,7 +1109,7 @@ function updatePipeline(data) {
   const running = (data.calls || []).filter(c => !c.finished_at);
   $('pipeline').innerHTML = `<div class="pipe-steps">${steps.map(s => `<span class="pipe-step ${active && phase.name === s ? 'on' : ''}">${esc(s)}</span>`).join('<i>→</i>')}</div>` +
     `<div class="pipe-now">${active ? `지금: <b>${esc(phase.name)}</b> · ${elapsed.toFixed(1)}초째` : data.connection.status === 'connected' ? `대기 중${data.auto ? ' · 자동 플레이' : ''}` : '연결 안 됨'}</div>` +
-    running.map(c => `<div class="pipe-call"><span class="role ${esc(c.role)}">${esc(c.role === 'live' ? (c.comparison ? '비교 기준 모델' : '제어 모델') : c.role === 'shadow' ? '비교 모델' : c.role)}</span><b>${esc(c.provider)}</b> ${esc(c.model || '')} · ${esc(c.runtime || '')}<em>${(serverNow() - c.started_at).toFixed(1)}초</em></div>`).join('');
+    running.map(c => `<div class="pipe-call"><span class="role ${esc(c.role)}">${esc(callRoleLabel(c))}</span><b>${esc(c.provider)}</b> ${esc(c.model || '')} · ${esc(c.runtime || '')}<em>${(serverNow() - c.started_at).toFixed(1)}초</em></div>`).join('');
 }
 
 function usageText(usage) {
@@ -1014,7 +1138,7 @@ function updateCalls(data) {
     const status = !done ? '<span class="warn">진행 중</span>' : c.status === 'ok' ? `→ <b>${esc(c.action)}</b>` : `<span class="bad">${esc(c.error)}</span>`;
     const usage = usageText(c.usage);
     return `<details class="call ${done ? '' : 'running'} ${c.status && c.status !== 'ok' ? 'failed' : ''}" data-call="${c.id}" ${openCalls.has(String(c.id)) ? 'open' : ''}>
-      <summary><span class="role ${esc(c.role)}">${esc(c.role === 'live' ? (c.comparison ? '비교 기준 모델' : '제어 모델') : c.role === 'shadow' ? '비교 모델' : c.role)}</span><b>${esc(c.provider)}</b><span class="call-model">${esc(c.model || '')}</span>${status}<em class="${over ? 'bad' : ''}">${done ? `${Math.round(c.ms)} ms${over ? ' · 목표 초과' : ''}` : ''}</em></summary>
+      <summary><span class="role ${esc(c.role)}">${esc(callRoleLabel(c))}</span><b>${esc(c.provider)}</b><span class="call-model">${esc(c.model || '')}</span>${status}<em class="${over ? 'bad' : ''}">${done ? `${Math.round(c.ms)} ms${over ? ' · 목표 초과' : ''}` : ''}</em></summary>
       <div class="call-body">
         <div class="call-meta">${esc(c.runtime || '')}${c.endpoint ? ` · <code>${esc(c.endpoint)}</code>` : ''} · 입력 ${esc(c.input_chars)}자${c.routed_model ? ` · 응답 모델 ${esc(c.routed_model)}` : ''}${c.confidence !== undefined && c.confidence !== null ? ` · 분포 집중도 ${esc(c.confidence)}` : ''}${usage ? ` · ${esc(usage)}` : ''}</div>
         <div class="call-cols"><div><small>보낸 요청</small><pre>${esc(callRequestJson(c))}</pre></div><div><small>받은 응답</small><pre>${esc(done ? JSON.stringify(c.response ?? {error: c.error}, null, 2) : '기다리는 중…')}</pre></div></div>
@@ -1055,11 +1179,17 @@ function liveBlock(row, game) {
     const sent = row.action === option && row.action !== d.action;
     return `<div class="choice-row ${winner ? 'winner' : ''} ${sent ? 'sent' : ''}"><span>${esc(option)}${truthActions.includes(option) ? ' <i class="good">✓</i>' : ''}</span><div class="choice-track"><div class="choice-fill" data-w="${value * 100}"></div></div><span class="score">${known ? (value * 100).toFixed(0) + '%' : '—'}</span></div>`;
   }).join('');
-  return `<div class="model-block"><div class="model-name"><span>${row.comparison ? '비교 기준 모델' : '제어 모델'} · ${esc(d.provider.toUpperCase())}</span><span class="${over ? 'bad' : ''}">${esc(Math.round(d.model_ms))} ms${over ? ' · 목표 초과' : ''}</span></div>${row.reference_kind === 'instructional_rules' ? '<p class="field-note">아래 채점은 교육용 규칙과의 일치 여부입니다.</p>' : ''}${bars}${answerLines(d.answers, row.grade, game.questions)}</div>`;
+  const reference = referenceNote(row.reference_kind);
+  return `<div class="model-block"><div class="model-name"><span>${row.comparison ? '비교 기준 모델' : '제어 모델'} · ${esc(d.provider.toUpperCase())}</span><span class="${over ? 'bad' : ''}">${esc(Math.round(d.model_ms))} ms${over ? ' · 목표 초과' : ''}</span></div>${reference ? `<p class="field-note">${esc(reference)}</p>` : ''}${bars}${answerLines(d.answers, row.grade, game.questions)}</div>`;
 }
 
 function shadowBlock(s, game, comparison = false) {
-  if (s.status !== 'ok') return `<div class="shadow-line"><b>${esc(s.provider)}</b><span class="bad">${esc(s.status === 'timeout' ? '대기 시간 초과 (이번 판단에 응답 미포함)' : s.error)}</span></div>`;
+  if (s.status !== 'ok') {
+    const pending = s.status === 'running';
+    const source = s.source_step != null ? ` · ${s.source_step}번째 관찰` : '';
+    const status = pending ? `기록 시점에 판단 중${source}` : s.status === 'timeout' ? '대기 시간 초과 (이번 판단에 응답 미포함)' : s.error || '모델 호출 실패';
+    return `<div class="shadow-line"><b>${esc(s.provider)}</b><span class="${pending ? 'warn' : 'bad'}">${esc(status)}</span></div>`;
+  }
   const correct = s.grade?.action?.correct;
   return `<div class="model-block secondary-block"><div class="model-name secondary"><span>비교 모델 · ${esc(s.provider.toUpperCase())} → ${esc(s.action)} ${correct === undefined ? '' : correct ? '✓' : '✗'}</span><span>${s.agrees ? (comparison ? '기준 모델과 같음' : '최종 행동과 같음') : (comparison ? '기준 모델과 다름' : '최종 행동과 다름')} · ${esc(Math.round(s.model_ms))} ms</span></div>${answerLines(s.answers, s.grade, game.questions)}</div>`;
 }
@@ -1168,12 +1298,14 @@ async function poll() {
     updateObserved(data);
     updateFrame(data);
     updatePipeline(data);
+    updateLiveDecisions(data);
     updateInputTrace(data);
     updateCalls(data);
     updateDecisions(data);
     updateSummary(data);
     updateMeta(data);
     window.DecisionLearning?.update(data, connectedGame() || selectedGame());
+    window.LayaTraining?.update(data, selectedGame());
   } catch (error) { showMessage('대시보드 서버 연결 실패: ' + error.message, true); }
   finally { polling = false; }
 }

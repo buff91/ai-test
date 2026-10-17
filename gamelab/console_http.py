@@ -3,14 +3,15 @@
 import json
 import secrets
 from http.server import BaseHTTPRequestHandler
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 from gamelab.game_case import ROOT
 
 WEB = ROOT / "web"
 
 
 def make_handler(lab):
-    static = {"/app.css": "text/css", "/app.js": "application/javascript", "/learning.js": "application/javascript"}
+    static = {"/app.css": "text/css", "/app.js": "application/javascript", "/learning.js": "application/javascript",
+              "/training.css": "text/css", "/training.js": "application/javascript"}
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
@@ -52,6 +53,12 @@ def make_handler(lab):
                 self._send(200, lab.catalog())
             elif path == "/api/status":
                 self._send(200, lab.status())
+            elif path == "/api/training":
+                try:
+                    query = parse_qs(urlparse(self.path).query)
+                    self._send(200, lab.training_status(query.get("game", [None])[0], query.get("version", [None])[0]))
+                except (OSError, LookupError, ValueError, TypeError, RuntimeError) as exc:
+                    self._send(400, {"error": str(exc)})
             elif path == "/api/frame":
                 try:
                     self._send(200, lab.frame(), "image/png")
@@ -79,6 +86,7 @@ def make_handler(lab):
                     raise ValueError("요청은 JSON 객체여야 합니다.")
                 path = urlparse(self.path).path
                 model = {k: data.get(k) for k in ("provider", "shadows", "policy", "key", "decision_delay_ms")}
+                model["demonstration"] = data.get("demonstration", False)
                 routes = {
                     "/api/game-window": lambda: lab.prepare_game_window(data.get("game"), data.get("version")),
                     "/api/connect": lambda: lab.connect(data.get("game"), data.get("interface"),
@@ -94,6 +102,17 @@ def make_handler(lab):
                     "/api/reset": lambda: lab.reset(data.get("scenario")),
                     "/api/manual": lambda: lab.manual(data.get("action")),
                     "/api/key": lambda: lab.set_key(data.get("key")),
+                    "/api/training/collect": lambda: lab.training_collect(data.get("game"), data.get("call_id"), data.get("version")),
+                    "/api/training/review": lambda: lab.training_review(
+                        data.get("game"), data.get("case_id"), expected=data.get("expected"),
+                        split=data.get("split", "train"), review=data.get("review", "approved"), version=data.get("version")),
+                    "/api/training/train": lambda: lab.training_train(
+                        data.get("game"), {k: data[k] for k in ("base", "epochs", "encoder_lr", "head_lr",
+                                                               "freeze_encoder", "micro_batch", "grad_accum") if k in data},
+                        data.get("version")),
+                    "/api/training/evaluate": lambda: lab.training_evaluate(data.get("game"), data.get("checkpoint_id"), data.get("version")),
+                    "/api/training/apply": lambda: lab.training_apply(data.get("game"), data.get("checkpoint_id"), data.get("version")),
+                    "/api/training/rollback": lambda: lab.training_rollback(data.get("game"), data.get("version")),
                 }
                 if path not in routes:
                     self._send(404, {"error": "Not found"})

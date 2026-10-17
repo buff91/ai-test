@@ -73,6 +73,7 @@ class SocketGame:
             return {"ok": True, "game": self.game.id, "connector": self.game.connector, "runtime": self.runtime,
                     "target": self.game.target, "version_check": check_build(self.game, info.get("build")),
                     "protocol": info.get("protocol"), "capabilities": info.get("capabilities", {}),
+                    "timing": info.get("timing"), "continuous": info.get("continuous"),
                     "configuration": self.game.configuration(),
                     "scenarios": info.get("scenarios") if info.get("ok") else None,
                     # What the build says about itself, when it answers "info" with a "build".
@@ -111,9 +112,11 @@ class SocketGame:
             ok = bool(response.get("ok"))
             return {"ok": ok, "applied": ok and response.get("applied", True) is not False,
                     "action": action, "command": command, "error": response.get("error"),
-                    # A changed revision means the game moved on while the model was thinking.
+                    # Live worlds change revision every frame; only the host's
+                    # explicit age/episode guard can declare a live action stale.
                     "stale": bool(response.get("stale")) or
-                             (not ok and expected is not None and response.get("revision") != expected),
+                             (not self.game.config.get("continuous") and not ok and expected is not None
+                              and response.get("revision") != expected),
                     "state": response.get("snapshot"), "before": response.get("before"), "done": bool(response.get("done"))}
         if op in ("pause", "resume"):
             if self.game.config.get("continuous"):
@@ -131,7 +134,7 @@ class SocketGame:
         if response.get("ok") and not isinstance(response.get("snapshot"), dict):
             raise ValueError("게임 state 응답에는 snapshot 객체가 필요합니다.")
         state = response.get("snapshot") or {}
-        return {"frame": response.get("revision"), "observed_at": time.time(), "window": None, "state": state,
+        return {"frame": response.get("revision"), "observed_at": response.get("observed_at", time.time()), "window": None, "state": state,
                 "description": self.game.describe(state, response.get("description") or ""),
                 "signature": response.get("revision"), "truth": response.get("truth"),
                 "reference_kind": response.get("reference_kind"),

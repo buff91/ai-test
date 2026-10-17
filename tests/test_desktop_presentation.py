@@ -90,12 +90,12 @@ class DesktopPresentationTests(unittest.TestCase):
 
     def test_rejected_input_is_explained_without_changing_state(self):
         window = self.window("racer", "hairpin_fast")
-        window.keypress(Mock(keysym="Down"))
+        window.keypress(Mock(keysym="p"))
         before = window.service.render_state()["snapshot"]
         window.keypress(Mock(keysym="Left"))
         self.assertEqual(before, window.service.render_state()["snapshot"])
-        self.assertIn("다음 박자", window.input_notice)
-        self.assertTrue(any("다음 박자" in text for _, _, text in window.canvas.labels))
+        self.assertIn("일시정지", window.input_notice)
+        self.assertTrue(any("일시정지" in text for _, _, text in window.canvas.labels))
 
     def test_socket_and_manual_actions_share_visual_feedback(self):
         window = self.window("party", "goblin_pack")
@@ -104,6 +104,33 @@ class DesktopPresentationTests(unittest.TestCase):
         window.draw()
         self.assertTrue(window.effect_active)
         self.assertTrue(any(text == "최근 행동 · 빛의 파동" for _, _, text in window.canvas.labels))
+
+    def test_realtime_controls_accept_combined_inputs_without_waiting(self):
+        window = self.window("racer", "hairpin_fast")
+        with patch("sims.service.truth", side_effect=AssertionError("UI input must not block for reference search")):
+            window.keypress(Mock(keysym="Down"))
+            window.keypress(Mock(keysym="Left"))
+        self.assertEqual(window.service.sim.speed, 3)
+        self.assertEqual(window.service.sim.lane, 0)
+        self.assertEqual(window.service.sim.turn, 1)
+        self.assertEqual(window.input_notice, "")
+        self.assertFalse(any("박자" in text for _, _, text in window.canvas.labels))
+
+    def test_live_scene_displays_fractional_motion_and_cooldown_seconds(self):
+        for game, scenario in (("racer", "corner_exit"), ("moba", "wave_clear")):
+            with self.subTest(game=game):
+                window = self.window(game, scenario)
+                if game == "moba":
+                    window.service.handle({"op": "step", "action": "skill"})
+                    window.service.handle({"op": "step", "action": "advance"})
+                window.service.advance(.25)
+                self.assert_screen(window)
+                labels = [text for _, _, text in window.canvas.labels]
+                self.assertTrue(any("0.2초" in text or "0.3초" in text for text in labels))
+                self.assertFalse(any("박자" in text for text in labels))
+                self.assertNotEqual(window.service.render_state()["snapshot"]["realtime_position"] % 1, 0)
+                if game == "moba":
+                    self.assertTrue(any("2.8초 후" in text for text in labels))
 
     def test_feedback_and_controls_use_korean_display_names(self):
         self.assertEqual(GameWindow.event_label("Hero took 18 damage."), "영웅이 18 피해를 받았습니다.")
@@ -122,12 +149,11 @@ class DesktopPresentationTests(unittest.TestCase):
                                keysym_num=65364, state=64)
         self.assertEqual(input_key(korean_p), "p")
         window.keypress(korean_p)
-        self.assertFalse(window.service.paused)
+        self.assertTrue(window.service.paused)
         self.assertEqual(window.service.revision, 1)
         window.keypress(korean_p)
-        self.assertTrue(window.service.paused)
+        self.assertFalse(window.service.paused)
         self.assertEqual(window.service.revision, 2)
-        window.keypress(korean_p)
         window.keypress(down)
         self.assertEqual(window.service.sim.speed, 3)
         self.assertEqual(window.service.last_action, "brake")

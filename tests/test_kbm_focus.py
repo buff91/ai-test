@@ -77,6 +77,42 @@ class MacFocusTests(unittest.TestCase):
             self.assertTrue(self.platform.focus(TARGET)["focused"])
         self.application.activateWithOptions_.assert_called_once()
 
+    def test_generic_python_owner_can_focus_exact_observed_runtime_window(self):
+        for owner in ("Python", "python3", "Python3.12"):
+            platform = MacPlatform("python", "My Game", pid=123)
+            target = window(owner=owner)
+            duplicate = window(33, 456, owner="python3.12")
+            with self.subTest(owner=owner), patch.object(platform, "_windows", side_effect=[
+                    [self.front, duplicate, target], [target, duplicate, self.front]]):
+                self.assertTrue(platform.focus(TARGET)["focused"])
+        self.assertEqual(self.application.activateWithOptions_.call_count, 3)
+
+    def test_python_owner_alias_never_loosens_observed_pid_title_or_owner_checks(self):
+        platform = MacPlatform("python", "My Game", pid=123)
+        for candidate in (window(pid=456, owner="python3"), window(owner="python3", title="Other Title"),
+                          window(owner="ipython"), window(owner="python-helper"),
+                          window(owner="python3-malware"), window(owner="Python Launcher")):
+            with self.subTest(candidate=candidate), patch.object(platform, "_windows", return_value=[candidate]):
+                with self.assertRaises(LookupError):
+                    platform.focus(TARGET)
+        self.application.activateWithOptions_.assert_not_called()
+
+    def test_python_runtime_aliases_still_require_pid_when_multiple_games_match(self):
+        platform = MacPlatform("python", "My Game")
+        with patch.object(platform, "_windows", return_value=[window(owner="python3"),
+                                                             window(33, 456, owner="Python3.12")]):
+            with self.assertRaisesRegex(LookupError, "window.pid"):
+                platform.focus(TARGET)
+        self.application.activateWithOptions_.assert_not_called()
+
+    def test_explicit_python_runtime_owner_stays_exact_during_focus(self):
+        platform = MacPlatform("python3", "My Game", pid=123)
+        for owner in ("Python3", "python3.12", "python"):
+            with self.subTest(owner=owner), patch.object(platform, "_windows", return_value=[window(owner=owner)]):
+                with self.assertRaises(LookupError):
+                    platform.focus(TARGET)
+        self.application.activateWithOptions_.assert_not_called()
+
     def test_same_process_other_window_is_not_focus_confirmation(self):
         windows = [window(23), window(), self.front]
         with patch.object(self.platform, "_windows", return_value=windows), \

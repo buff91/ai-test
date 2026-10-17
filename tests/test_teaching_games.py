@@ -87,7 +87,7 @@ class DesktopClockTests(unittest.TestCase):
         for game in ("racer", "moba"):
             with self.subTest(game=game):
                 service = DesktopService(game, tick_ms=1200)
-                service.handle({"op": "resume"})
+                self.assertFalse(service.paused)
                 service.advance(2.5)
                 self.assertEqual(service.sim.turn, 3)
                 self.assertFalse(service.paused)
@@ -101,25 +101,30 @@ class DesktopClockTests(unittest.TestCase):
         self.assertTrue(response["ok"])
         revision = response["revision"]
         service.advance(1.3)
-        stale = service.handle({"op": "step", "action": "keep", "expected_revision": revision})
-        self.assertTrue(stale["stale"])
+        late_frame = service.handle({"op": "step", "action": "keep", "expected_revision": revision})
+        self.assertTrue(late_frame["ok"])  # A clock frame is not a model turn boundary.
         service.handle({"op": "halt"}); before = service.sim.turn
         service.advance(20); self.assertEqual(service.sim.turn, before)
         self.assertFalse(service.handle({"op": "step", "action": "keep"})["ok"])
         service.handle({"op": "reset", "scenario": "long_straight"})
         self.assertEqual(service.sim.scenario, "long_straight")
-        self.assertTrue(service.paused)
+        self.assertFalse(service.paused)
+        stale = service.handle({"op": "step", "action": "keep", "expected_revision": revision})
+        self.assertTrue(stale["stale"])
         self.assertTrue(service.handle({"op": "step", "action": "boost"})["ok"])
 
-    def test_realtime_input_has_world_beat_cooldown(self):
-        service = DesktopService("moba", tick_ms=1200)
-        self.assertTrue(service.handle({"op": "step", "action": "attack"})["ok"])
-        self.assertTrue(service.handle({"op": "step", "action": "attack"})["busy"])
-        self.assertEqual(service.sim.turn, 1)  # Input does not advance the independent world.
-        service.advance(1.3)
-        self.assertEqual(service.sim.turn, 2)
-        self.assertTrue(service.handle({"op": "step", "action": "attack"})["ok"])
-        self.assertEqual(service.sim.turn, 2)  # Manual/model input cannot double-step the world.
+    def test_realtime_input_is_independent_of_clock_and_other_controls(self):
+        service = DesktopService("racer", tick_ms=1200)
+        for action in ("brake", "brake", "steer_left", "accelerate"):
+            self.assertTrue(service.handle({"op": "step", "action": action})["ok"])
+        self.assertEqual(service.sim.turn, 1)
+        self.assertEqual(service.sim.speed, 3)
+        self.assertEqual(service.sim.lane, 0)
+        before = service.render_state()["snapshot"]
+        service.advance(.12)
+        after = service.render_state()["snapshot"]
+        self.assertGreater(after["realtime_position"], before["realtime_position"])
+        self.assertEqual(service.sim.turn, 1)
 
     def test_expired_budget_rejected_without_applying(self):
         service = DesktopService("racer")
